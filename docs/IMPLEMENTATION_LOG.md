@@ -5,7 +5,7 @@
 | Milestone | Description | Status |
 | :--- | :--- | :--- |
 | **Milestone 0** | Documentation & Minimal Backend Foundation | **COMPLETED** |
-| **Milestone 1** | MongoDB Connection & Health Lifecycle | **COMPLETED** |
+| **Milestone 1** | MongoDB Connection & Health Lifecycle | **COMPLETED & FULLY VERIFIED** (Automated Tests + Live Atlas Connection Confirmed) |
 | **Milestone 2** | Research Notes Data Model & CRUD Operations | **NOT IMPLEMENTED** (Next Approved Milestone) |
 | **Milestone 3** | Image Attachments & Evidence Metadata | **NOT IMPLEMENTED** |
 | **Milestone 4** | Indexing & Efficient Querying | **NOT IMPLEMENTED** |
@@ -48,7 +48,11 @@
 
 - **Date**: 2026-10-13
 - **Objective**: Implement the smallest working FastAPI backend that loads environment configuration via `pydantic-settings`, manages PyMongo `MongoClient` connection lifecycle, verifies connectivity via the admin `ping` command, exposes `/health` and `/api/health`, and provides offline test coverage.
-- **Verification Status**: Verified with 14 automated pytest tests (all passing). Verified OpenAPI schema export. Verified zero leakage of credentials, connection strings, or internal traces on failure.
+- **Verification Status**:
+  - **Automated Unit / Mocked Test Suite**: Verified with 14 automated pytest tests (all passing in ~0.38s).
+  - **Live MongoDB Atlas Connectivity**: **VERIFIED & CONFIRMED**. Connected to live cluster (`fieldnote-cluster.maysnkd.mongodb.net`), admin ping executed successfully (`{'ok': 1}`).
+  - **Live Health Endpoint Verification**: Both `GET /health` and `GET /api/health` return HTTP `200 OK` with `{"status": "healthy", "app": "ok", "database": "connected", "environment": "development"}`.
+  - **Error Safety**: Verified that connection failures return HTTP `503 Service Unavailable` with `status: "unhealthy"`, `app: "ok"`, `database: "disconnected"` without leaking internal details or credentials.
 
 ### Files Created or Modified:
 1. `app/config.py` *(Created)* — Implements `Settings` using `pydantic-settings` to load `MONGODB_URI`, `DATABASE_NAME`, `APP_ENV`, `APP_HOST`, `APP_PORT`, `MONGODB_SERVER_SELECTION_TIMEOUT_MS`, and `UPLOAD_DIR`. Enforces non-empty `MONGODB_URI`.
@@ -59,17 +63,17 @@
 6. `tests/test_config.py` *(Created)* — 3 tests validating settings loading, missing `MONGODB_URI` validation failure, and empty string rejection.
 7. `tests/test_db.py` *(Created)* — 6 tests verifying client option timeout configuration, `ping_database` success (`{"ok": 1.0}`), failure handling on `ConnectionFailure`, `ServerSelectionTimeoutError`, `None` client handling, and clean client disposal.
 8. `tests/test_health.py` *(Created)* — 5 tests verifying 200 OK responses on healthy database, 503 Service Unavailable responses on database disconnection (with explicit assertion that credentials, hostnames, and stack traces are absent), `None` client handling, and application lifespan initialization.
+9. `.env` *(Updated)* — Corrected URI delimiter syntax (`@@` -> `@`).
 
-### Key Architectural & Engineering Decisions Made:
-- **FastAPI Lifespan Context Manager**: Avoids creating a new client per request. `MongoClient` is initialized once during startup and stored on `app.state.db_client`, then closed during shutdown via `close_mongo_client()`.
-- **Fast Failover Timeout (`serverSelectionTimeoutMS`)**: Default set to 2000ms (configurable) to prevent health checks from blocking or hanging when the cluster is unreachable.
-- **Strict Distinction in Health Reporting**: `/health` reports `app: "ok"` alongside `database: "disconnected"` when MongoDB is down, and returns HTTP `503 Service Unavailable` with `status: "unhealthy"`. This ensures database outages never produce a false healthy status.
-- **Safe Information Boundary**: No exception messages, connection strings, usernames, or passwords are exposed to the client in HTTP responses.
-- **Test Isolation Without Live Atlas Credential Dependency**: Tests run completely offline and hermetically using FastAPI dependency injection overrides (`app.dependency_overrides`) and mock database clients. Tests do not claim to have contacted Atlas.
-
-### Verification Performed:
-- Executed `pytest -v`: **14 tests collected, 14 passed in 0.53s**.
-- Executed OpenAPI inspection command: Confirmed `/health` path registered cleanly.
+### Live Connection Check & Diagnostic Record:
+1. **Security & Secrecy**: `.env` is present in root and strictly ignored in `.gitignore`. No credentials, usernames, or passwords logged or leaked.
+2. **Diagnostic & Resolution**: Initial connection attempt encountered `pymongo.errors.InvalidURI` due to duplicate `@` delimiter (`@@`) in `.env`. Corrected to single `@`.
+3. **Live Ping Execution**:
+   - Executed `client.admin.command("ping")` directly through configured PyMongo client.
+   - Result: `{'ok': 1}`. Live Atlas cluster responded successfully.
+4. **Endpoint Verification**:
+   - `GET /health` -> HTTP `200 OK`: `{"status": "healthy", "app": "ok", "database": "connected", "environment": "development"}`.
+   - `GET /api/health` -> HTTP `200 OK`: `{"status": "healthy", "app": "ok", "database": "connected", "environment": "development"}`.
 
 ---
 
@@ -91,4 +95,4 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 - **Milestone 2**: Research Notes Data Model & CRUD Operations
   - Focus: Note Pydantic schemas (create, update, read), PyMongo collection operations (insert_one, find, find_one, update_one, delete_one), route handlers, and test coverage.
-  - Required before starting: User review and explicit approval of Milestone 1.
+  - Required before starting: Explicit user approval to proceed.
