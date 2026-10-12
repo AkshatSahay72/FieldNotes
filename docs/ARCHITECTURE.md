@@ -150,18 +150,19 @@ FastAPI provides an exception handler hierarchy:
 To ensure queries remain efficient and demonstrate database fundamentals during academic evaluation:
 
 ### 6.1 Configured Indexes
-1. **`notes.created_at` (DESCENDING)**: Single-field descending index (`idx_notes_created_at_desc`) supports default `GET /api/notes` ordering newest first without in-memory sort stages.
-2. **`notes.tags` (ASCENDING / MULTIKEY)**: Multikey B-tree index (`idx_notes_tags`, `[("tags", 1)]`) indexes individual string elements of the `tags` array, accelerating tag filtering queries using `$in`.
-3. **`notes` Text Index (`title: "text"`, `content: "text"`)**: Compound native text index (`idx_notes_text`) enables keyword searches across both the note title and body via `$text: {"$search": q}`.
-4. **`attachments.note_id` (ASCENDING)**: Single-field index (`idx_attachments_note_id`, `[("note_id", 1)]`) supports fast attachment listing (`GET /api/notes/{note_id}/attachments`) and cascading cleanup lookups without full-collection scans.
-5. **Vector Index (Atlas)** (Planned): Configured on `embedding` field with cosine similarity for Milestone 6.
+1. **`notes.created_at` (DESCENDING)**: Single-field descending index (`idx_notes_created_at_desc`, `[("created_at", -1)]`) retained for backwards-compatibility.
+2. **`notes (created_at DESC, _id DESC)` (COMPOUND)**: Compound B-tree index (`idx_notes_created_at_id_desc`, `[("created_at", -1), ("_id", -1)]`) specifically satisfies deterministic pagination sorting. While single-field `created_at` cannot satisfy a compound sort without an in-memory `SORT` stage, this compound index enables MongoDB to scan index entries in exact sort order (`IXSCAN -> FETCH`), eliminating in-memory sorting and collection scans for unfiltered list queries.
+3. **`notes.tags` (ASCENDING / MULTIKEY)**: Multikey B-tree index (`idx_notes_tags`, `[("tags", 1)]`) indexes individual string elements of the `tags` array, accelerating tag filtering queries using `$in`.
+4. **`notes` Text Index (`title: "text"`, `content: "text"`)**: Compound native text index (`idx_notes_text`) enables keyword searches across both the note title and body via `$text: {"$search": q}`.
+5. **`attachments.note_id` (ASCENDING)**: Single-field index (`idx_attachments_note_id`, `[("note_id", 1)]`) supports fast attachment listing (`GET /api/notes/{note_id}/attachments`) and cascading cleanup lookups without full-collection scans.
+6. **Vector Index (Atlas)** (Planned): Configured on `embedding` field with cosine similarity for Milestone 6.
 
 ### 6.2 Query Composition & Semantics
-- **Tag Filtering Semantics**: Tag queries accept one or multiple tags (`?tag=soil&tag=water` or comma-separated `?tags=soil,water`). Multiple requested tags use **OR semantics** via MongoDB's `$in` operator:
+- **Tag Filtering Semantics**: Tag queries accept one or multiple tags via repeated `?tag=...` parameters, comma-separated `?tags=...`, or both parameters supplied together (e.g. `?tag=soil&tags=water,canopy`). Multiple requested tags use **OR semantics** via MongoDB's `$in` operator:
   ```json
-  {"tags": {"$in": ["soil", "water"]}}
+  {"tags": {"$in": ["soil", "water", "canopy"]}}
   ```
-  A note matches if its `tags` array contains at least one of the queried tags. Blank or whitespace-only tag parameters return HTTP `400 Bad Request`.
+  A note matches if its `tags` array contains at least one of the queried tags. Any blank or whitespace-only tag values across either parameter return HTTP `400 Bad Request`.
 - **Query Composition**: When both text search and tag filters are supplied, they are composed in a single MongoDB query document with implicit AND semantics:
   ```json
   {
@@ -177,8 +178,9 @@ To ensure queries remain efficient and demonstrate database fundamentals during 
   Since `_id` values are monotonically generated and unique `ObjectId`s, this tie-breaker prevents page drift or skipped notes across pagination boundaries.
 
 ### 6.3 MongoDB Text Search Limitations (Academic & Viva Focus)
-1. **Single Text Index per Collection**: MongoDB allows at most **one** text index per collection. Adding a second text index throws an error.
-2. **Text Index & Sort Key Restrictions**: Unlike standard B-tree compound indexes, MongoDB text indexes cannot have trailing sort keys. When querying with `$text` and sorting by `[("created_at", -1), ("_id", -1)]`, MongoDB uses `idx_notes_text` to select matching documents and then executes an **in-memory sort stage** (`SORT`). For high-throughput chronological searches on massive datasets, text relevance score (`metaTextScore`) or specialized search engines (Atlas Search) would be evaluated.
-3. **No Fuzzy or Typo-Tolerant Matching**: Native MongoDB `$text` search relies on word tokenization, stemming (e.g. "runs" -> "run"), and stop-word removal for supported languages (default: English). It does **not** support fuzzy Levenshtein distance, partial substring regex matching, or typo tolerance.
-4. **No Semantic or Vector Understanding**: Native `$text` performs exact lexical/stemmed matching. It does not understand synonyms, context, or embeddings. Semantic retrieval is reserved for Milestone 6 using MongoDB Atlas Vector Search.
+1. **Requires Text Index**: Native `$text` queries strictly require a text index to exist on the collection; executing `$text` without a text index results in a database execution error.
+2. **Text Index Does Not Optimize Chronological Sorting**: In MongoDB, text indexes cannot include trailing B-tree keys for sorting. A text index does **not** optimize chronological sorting. When querying with `$text` and sorting by `[("created_at", -1), ("_id", -1)]`, MongoDB uses `idx_notes_text` for document filtering and then requires an additional **in-memory sort stage** (`SORT`). For high-throughput chronological searches on massive datasets, relevance score sorting (`metaTextScore`) or specialized search engines (Atlas Search) would be evaluated.
+3. **Single Text Index per Collection**: MongoDB allows at most **one** text index per collection. Adding a second text index throws an error.
+4. **No Fuzzy or Typo-Tolerant Matching**: Native MongoDB `$text` search relies on word tokenization, stemming (e.g. "runs" -> "run"), and stop-word removal for supported languages (default: English). It does **not** support fuzzy Levenshtein distance, partial substring regex matching, or typo tolerance.
+5. **No Semantic or Vector Understanding**: Native `$text` performs exact lexical/stemmed matching. It does not understand synonyms, context, or embeddings. Semantic retrieval is reserved for Milestone 6 using MongoDB Atlas Vector Search.
 

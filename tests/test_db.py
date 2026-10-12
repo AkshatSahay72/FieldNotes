@@ -65,11 +65,12 @@ def test_init_db_indexes():
     mock_db = {"notes": mock_notes, "attachments": mock_attachments}
 
     init_db_indexes(mock_db)
-    assert mock_notes.create_index.call_count == 3
+    assert mock_notes.create_index.call_count == 4
     notes_calls = mock_notes.create_index.call_args_list
     assert notes_calls[0] == (([("created_at", -1)],), {"name": "idx_notes_created_at_desc"})
-    assert notes_calls[1] == (([("tags", 1)],), {"name": "idx_notes_tags"})
-    assert notes_calls[2] == (([("title", "text"), ("content", "text")],), {"name": "idx_notes_text"})
+    assert notes_calls[1] == (([("created_at", -1), ("_id", -1)],), {"name": "idx_notes_created_at_id_desc"})
+    assert notes_calls[2] == (([("tags", 1)],), {"name": "idx_notes_tags"})
+    assert notes_calls[3] == (([("title", "text"), ("content", "text")],), {"name": "idx_notes_text"})
 
     mock_attachments.create_index.assert_called_once_with(
         [("note_id", 1)],

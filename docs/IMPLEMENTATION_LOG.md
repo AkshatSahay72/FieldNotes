@@ -149,30 +149,31 @@
 ### Files Created or Modified:
 1. `app/db.py` *(Modified)*:
    - Added PyMongo `TEXT` import.
-   - Updated `init_db_indexes(db)` to create multikey index `idx_notes_tags` (`[("tags", ASCENDING)]`) and text index `idx_notes_text` (`[("title", TEXT), ("content", TEXT)]`) alongside existing indexes.
+   - Updated `init_db_indexes(db)` to create multikey index `idx_notes_tags` (`[("tags", ASCENDING)]`), text index `idx_notes_text` (`[("title", TEXT), ("content", TEXT)]`), and compound index `idx_notes_created_at_id_desc` (`[("created_at", DESCENDING), ("_id", DESCENDING)]`) alongside existing indexes.
 2. `app/routes/notes.py` *(Modified)*:
    - Added `parse_and_validate_tags(tag, tags)` helper supporting repeatable `?tag=...` and comma-separated `?tags=...`, stripping whitespace and rejecting empty or whitespace-only tags with HTTP `400 Bad Request`.
    - Added `build_notes_query(tags, q)` helper composing tag filtering (`{"tags": {"$in": tags}}`) and native text search (`{"$text": {"$search": q}}`) into a unified MongoDB query filter dict.
    - Updated `GET /api/notes` route handler with query parameters `tag: List[str]`, `tags: Optional[str]`, `q: Optional[str]`, `skip: int = Query(default=0, ge=0)`, and `limit: int = Query(default=20, ge=1, le=100)`.
    - Updated cursor sorting to deterministic compound sort `cursor.sort([("created_at", -1), ("_id", -1)])` to guarantee stable pagination across timestamp ties.
 3. `tests/test_db.py` *(Modified)*:
-   - Updated `test_init_db_indexes` to verify that `idx_notes_created_at_desc`, `idx_notes_tags`, and `idx_notes_text` are initialized on `notes`, and `idx_attachments_note_id` on `attachments`.
+   - Updated `test_init_db_indexes` to verify that `idx_notes_created_at_desc`, `idx_notes_created_at_id_desc`, `idx_notes_tags`, and `idx_notes_text` are initialized on `notes`, and `idx_attachments_note_id` on `attachments`.
 4. `tests/test_notes.py` *(Modified)*:
    - Upgraded `FakeCursor` test double to support multi-attribute compound sorting and chained `.skip()` / `.limit()` slicing.
    - Upgraded `FakeCollection.find()` to evaluate MongoDB query filters including `{"tags": {"$in": ...}}` and `{"$text": {"$search": ...}}`.
-   - Added 14 unit and integration tests thoroughly testing query composition, edge cases, error conditions, and pagination.
+   - Added unit and integration tests thoroughly testing query composition, edge cases, error conditions, parameter combinations (`tag` and `tags` together), malformed tag values, and pagination.
 5. `docs/ARCHITECTURE.md` *(Modified)*:
    - Updated component status table to Milestone 4.
-   - Added Section 6.1, 6.2, and 6.3 detailing configured indexes, query composition, tag OR semantics, pagination rules, deterministic sorting tie-breaker, and transparent documentation of MongoDB text search limitations.
+   - Added Section 6.1, 6.2, and 6.3 detailing configured indexes, compound sort index `idx_notes_created_at_id_desc`, query composition, tag OR semantics, pagination rules, deterministic sorting tie-breaker, and transparent documentation of MongoDB text search limitations.
 6. `README.md` *(Modified)*:
    - Added concise API query parameter examples for listing, tag filtering, text searching, and pagination.
 
 ### Key Architectural & Engineering Decisions Made:
-- **Tag Filtering Semantics (OR via `$in`)**: Filtering by multiple tags uses MongoDB's `$in` operator across the `tags` array field (`{"tags": {"$in": ["soil", "water"]}}`). OR semantics is standard and intuitive for exploratory research notes discovery.
+- **Compound Index for Stable Pagination**: Added `idx_notes_created_at_id_desc` (`[("created_at", -1), ("_id", -1)]`). Justification: An index on `created_at` alone cannot satisfy a compound sort on `[("created_at", -1), ("_id", -1)]` in MongoDB and results in a `COLLSCAN` + `SORT` stage. The compound index enables index-covered scanning (`IXSCAN -> FETCH`) without an in-memory sort stage for unfiltered pagination.
+- **Tag Filtering Semantics (OR via `$in`)**: Filtering by multiple tags uses MongoDB's `$in` operator across the `tags` array field (`{"tags": {"$in": ["soil", "water"]}}`). OR semantics is standard and intuitive for exploratory research notes discovery. Both `tag` and `tags` can be used individually or combined.
 - **Multikey Index**: Added `idx_notes_tags` (`[("tags", 1)]`) on `notes`. Justification: Because `tags` is an array of strings, MongoDB automatically indexes each array element in a multikey index, allowing `$in` queries to perform index range scans rather than full collection scans.
-- **Native MongoDB Text Index & Search**: Added `idx_notes_text` (`[("title", "text"), ("content", "text")]`). Text queries use `$text: {"$search": q}`. We explicitly document that MongoDB native text search is lexical (word stemming and stop words), allows only one text index per collection, requires an in-memory sort when combined with date ordering, and does not provide fuzzy or vector similarity.
+- **Native MongoDB Text Index & Search Caveats**: Added `idx_notes_text` (`[("title", "text"), ("content", "text")]`). Text queries require a text index and use `$text: {"$search": q}`. We explicitly document that MongoDB native text search is lexical (word stemming and stop words), allows only one text index per collection, does not optimize chronological sorting (combining `$text` with date ordering requires an in-memory sort stage), and does not provide fuzzy or vector similarity.
 - **Deterministic Sort Tie-Breaker**: To prevent pagination drift when multiple notes share the exact same microsecond timestamp, queries sort on `[("created_at", -1), ("_id", -1)]`. `ObjectId`s are strictly ordered by creation timestamp and machine counter, guaranteeing consistent pagination boundaries.
-- **Strict Boundary Validation**: Pagination parameters enforce `skip >= 0` and `1 <= limit <= 100` via FastAPI/Pydantic `Query` bounds (HTTP `422 Unprocessable Entity`). Empty search strings (`q=""`) or blank tags (`tag=""`) return HTTP `400 Bad Request` to catch client errors early.
+- **Strict Boundary Validation**: Pagination parameters enforce `skip >= 0` and `1 <= limit <= 100` via FastAPI/Pydantic `Query` bounds (HTTP `422 Unprocessable Entity`). Empty search strings (`q=""`) or blank tags (`tag=""` or `tags=""`) return HTTP `400 Bad Request` to catch client errors early.
 
 ---
 

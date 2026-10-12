@@ -62,6 +62,9 @@ def init_db_indexes(db: Optional[Database]) -> None:
       notes ordered by newest first (created_at DESC). Creating a B-tree index
       on this field avoids memory-intensive in-memory sort stages and ensures
       efficient index-covered scans as notes volume scales.
+    - notes (created_at DESC, _id DESC): Compound B-tree index satisfying
+      deterministic pagination sorting on [("created_at", -1), ("_id", -1)]
+      without requiring an in-memory SORT stage or COLLSCAN.
     - notes.tags (ASCENDING): Multikey B-tree index enabling efficient filtering
       by note tags (e.g., {"tags": {"$in": [...]}}) without full collection scans.
     - notes (title: text, content: text): Compound text index supporting native
@@ -76,6 +79,10 @@ def init_db_indexes(db: Optional[Database]) -> None:
         db["notes"].create_index(
             [("created_at", DESCENDING)],
             name="idx_notes_created_at_desc",
+        )
+        db["notes"].create_index(
+            [("created_at", DESCENDING), ("_id", DESCENDING)],
+            name="idx_notes_created_at_id_desc",
         )
         db["notes"].create_index(
             [("tags", ASCENDING)],

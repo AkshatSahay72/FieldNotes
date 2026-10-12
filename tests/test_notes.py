@@ -281,16 +281,27 @@ def test_list_notes_filter_comma_separated_and_alias(client, fake_db):
     assert len(res_alias.json()) == 1
     assert res_alias.json()[0]["title"] == "Note 2"
 
+    # Both ?tag= and ?tags= supplied together
+    res_both = client.get("/api/notes?tag=sensor&tags=drone")
+    assert res_both.status_code == 200
+    assert len(res_both.json()) == 2
+
 
 def test_list_notes_empty_or_whitespace_tag_rejected(client):
     """Verify empty or whitespace-only tag query parameters are rejected with 400 Bad Request."""
-    res_empty = client.get("/api/notes?tag=")
-    assert res_empty.status_code == 400
-    assert "Tag filter value cannot be empty" in res_empty.json()["detail"]
-
-    res_ws = client.get("/api/notes?tag=   ")
-    assert res_ws.status_code == 400
-    assert "Tag filter value cannot be empty" in res_ws.json()["detail"]
+    for malformed_url in [
+        "/api/notes?tag=",
+        "/api/notes?tag=   ",
+        "/api/notes?tags=",
+        "/api/notes?tags=   ",
+        "/api/notes?tag=soil,",
+        "/api/notes?tags=soil,,water",
+        "/api/notes?tag=soil&tags=   ",
+        "/api/notes?tag=   &tags=water",
+    ]:
+        res = client.get(malformed_url)
+        assert res.status_code == 400, f"Expected 400 for {malformed_url}, got {res.status_code}"
+        assert "Tag filter value cannot be empty" in res.json()["detail"]
 
 
 def test_list_notes_text_search_matching_title(client, fake_db):
