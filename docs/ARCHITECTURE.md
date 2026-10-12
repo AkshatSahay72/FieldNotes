@@ -39,16 +39,17 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 
 ## 2. Distinction: Planned Design vs. Implemented Behavior
 
-| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 0) |
+| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 3B) |
 | :--- | :--- | :--- |
-| **API Framework (FastAPI)** | Modular routers (`/api/health`, `/api/notes`, `/api/analytics`, `/api/search`) | **NOT IMPLEMENTED** (Directories created only) |
-| **Database Driver (PyMongo)** | Singleton/lifespan-managed `MongoClient` with connection pooling | **NOT IMPLEMENTED** |
-| **Database (MongoDB Atlas)** | Remote Atlas Cluster storing `notes` and `attachments` | **NOT IMPLEMENTED** (Connection string template in `.env.example`) |
-| **Configuration** | Pydantic Settings reading environment variables | **NOT IMPLEMENTED** |
-| **Collections & Schemas** | Document validation rules on `notes` and `attachments` | **NOT IMPLEMENTED** |
-| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **NOT IMPLEMENTED** |
-| **Aggregation Pipelines** | Multi-stage analytical queries | **NOT IMPLEMENTED** |
-| **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** |
+| **API Framework (FastAPI)** | Modular routers (`/api/health`, `/api/notes`, `/api/analytics`, `/api/search`) | **IMPLEMENTED** (`/health`, `/api/health`, `/api/notes`, `/api/notes/{note_id}/attachments`) |
+| **Database Driver (PyMongo)** | Singleton/lifespan-managed `MongoClient` with connection pooling | **IMPLEMENTED** (lifespan management, ping checks, `get_database`, `get_gridfs` dependencies) |
+| **Database (MongoDB Atlas)** | Remote Atlas Cluster storing `notes`, `attachments`, and GridFS buckets | **IMPLEMENTED** (`notes`, `attachments`, `fs.files`, `fs.chunks`) |
+| **Configuration** | Pydantic Settings reading environment variables | **IMPLEMENTED** (`pydantic-settings` reading `.env` with validation) |
+| **Collections & Schemas** | Document validation rules on `notes` and `attachments` | **IMPLEMENTED** (Pydantic schemas + PyMongo BSON serialization) |
+| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **IMPLEMENTED** (`idx_notes_created_at_desc` on `notes`, `idx_attachments_note_id` on `attachments`) |
+| **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
+| **Aggregation Pipelines** | Multi-stage analytical queries | **NOT IMPLEMENTED** (Milestone 5) |
+| **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6) |
 
 ---
 
@@ -56,8 +57,8 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 
 The application uses **12-factor configuration** driven entirely by environment variables. No secrets or connection strings are hardcoded in the application repository.
 
-- Configuration will be defined in a centralized settings module using `pydantic-settings`.
-- In local development, values will be sourced from a `.env` file (excluded from version control).
+- Configuration is defined in `app.config.Settings` using `pydantic-settings`.
+- In local development, values are sourced from a `.env` file (excluded from version control).
 - In staging/production (e.g. Render), values will be injected directly via environment variables.
 
 ### Key Configuration Variables:
@@ -66,66 +67,88 @@ The application uses **12-factor configuration** driven entirely by environment 
 - `APP_ENV`: Application environment (`development`, `testing`, `production`).
 - `APP_HOST`: Host interface binding (default: `127.0.0.1`).
 - `APP_PORT`: Port binding (default: `8000`).
-- `UPLOAD_DIR`: Local filesystem directory for storing binary attachments.
+- `MONGODB_SERVER_SELECTION_TIMEOUT_MS`: Timeout for MongoDB commands before failing fast (default: `2000`).
+- `UPLOAD_DIR`: Optional local filesystem storage directory.
 
 ---
 
-## 4. Planned Collection Responsibilities & Schemas
+## 4. Collection Responsibilities & Schemas
 
-Fieldnote avoids relational tables and instead utilizes idiomatic document modeling across two primary collections: `notes` and `attachments`.
+Fieldnote avoids relational tables and instead utilizes idiomatic document modeling across two primary collections (`notes` and `attachments`) alongside MongoDB GridFS buckets (`fs.files` and `fs.chunks`).
 
 ### 4.1 Collection: `notes`
-Stores the primary research notes, tags, metadata, and references to attachments.
+Stores the primary research notes, tags, and timestamps.
 
 - `_id`: `ObjectId` (MongoDB primary key)
-- `title`: `str` (required, indexed) — Concise title of the observation or finding
-- `body`: `str` (required) — Markdown or plain text content of the note
-- `tags`: `list[str]` (required, default `[]`, multikey indexed) — Categorical tags for classification
-- `attachment_ids`: `list[ObjectId]` (default `[]`) — Explicit references to documents in the `attachments` collection
-- `created_at`: `datetime` (UTC timestamp, indexed)
+- `title`: `str` (required) — Concise title of the observation or finding
+- `content`: `str` (required) — Markdown or plain text content of the note
+- `tags`: `list[str]` (required, default `[]`) — Categorical tags for classification
+- `created_at`: `datetime` (UTC timestamp, indexed DESC)
 - `updated_at`: `datetime` (UTC timestamp)
-- `embedding`: `list[float]` (optional, planned for Milestone 6) — High-dimensional vector embedding for semantic search
-
-**Modeling rationale**: Embedding attachment references (`attachment_ids`) inside the note keeps note retrieval fast, while keeping heavy binary metadata out of the main document to respect MongoDB document size limits and optimize working set memory.
 
 ### 4.2 Collection: `attachments`
-Stores metadata and descriptions for uploaded evidence/images.
+Stores metadata and user-written captions/descriptions for uploaded image evidence.
 
 - `_id`: `ObjectId` (MongoDB primary key)
-- `note_id`: `ObjectId` (indexed reference to parent note)
-- `filename`: `str` — Sanitized stored filename
-- `original_filename`: `str` — Original name uploaded by user
-- `file_path`: `str` — Relative storage path on disk / volume
-- `mime_type`: `str` — Media type (e.g., `image/jpeg`, `image/png`)
-- `file_size`: `int` — Size in bytes
-- `caption`: `str` — User-written short title or caption
-- `description`: `str` — User-authored contextual description of the evidence
+- `note_id`: `ObjectId` (foreign reference to parent note, indexed ASC)
+- `file_id`: `ObjectId` (reference to binary file document in `fs.files`)
+- `filename`: `str` — Sanitized display filename (never a raw filesystem path)
+- `content_type`: `str` — Verified MIME type (`image/jpeg`, `image/png`, or `image/webp`)
+- `file_size`: `int` — Size in bytes (bounded to <= 5 MB)
+- `caption`: `Optional[str]` — User-provided short title or caption
+- `description`: `Optional[str]` — User-authored contextual description of the evidence
 - `created_at`: `datetime` (UTC timestamp)
 
-**Binary file storage strategy**: Binary image contents are stored on the filesystem / persistent volume, and only metadata and descriptive context are stored in MongoDB. This is the recommended practice for files over small thumbnails to prevent database cache churn.
+### 4.3 Binary Storage Model: PyMongo GridFS
+Binary image payloads are stored in MongoDB GridFS:
+- `fs.files`: Tracks binary file chunks count, chunk size, MD5 hash, upload date, and length.
+- `fs.chunks`: Stores binary byte chunks (255 KB default chunk size).
+
+#### Ingestion & Safety Controls:
+1. **Bounded Reading & Size Enforcement**: File data is read from FastAPI `UploadFile` in 1 MB incremental chunks up to a hard limit of 5 MB (`5 * 1024 * 1024` bytes). Reading aborts immediately with HTTP `413 Content Too Large` if this bound is crossed, preventing memory exhaustion and denial-of-service from unbounded buffering.
+2. **True Format Verification (Magic Bytes)**: File content is sniffed using binary magic numbers rather than trusting client-supplied `Content-Type` headers:
+   - JPEG: starts with `\xff\xd8\xff`
+   - PNG: starts with `\x89PNG\r\n\x1a\n`
+   - WebP: starts with `RIFF` and contains `WEBP` signature at byte offset 8-11.
+   MIME spoofing or unallowed image formats return HTTP `415 Unsupported Media Type`.
+3. **Filename Sanitization**: Client-supplied filenames are sanitized with `os.path.basename` and regex stripping to prevent directory traversal and header injection. Client filenames are never used as server filesystem paths.
+4. **Streaming Downloads**: `GET /api/notes/{note_id}/attachments/{attachment_id}/download` uses FastAPI `StreamingResponse` to stream GridFS binary chunks efficiently, setting the stored `content_type` and `Content-Disposition: inline`.
+
+### 4.4 Cascading Deletion & Partial Failure Safety
+MongoDB lacks multi-collection foreign key constraints. When a note is deleted via `DELETE /api/notes/{note_id}`:
+1. All child attachment metadata records are queried: `attachments.find({"note_id": note_oid})`.
+2. For each attachment, the binary data in GridFS is deleted: `gridfs.delete(file_id)`.
+3. The attachment metadata records are purged: `attachments.delete_many({"note_id": note_oid})`.
+4. Only upon successful attachment cleanup is the parent note deleted: `notes.delete_one({"_id": note_oid})`.
+
+**Failure Handling**: If an error occurs during GridFS or metadata cleanup (e.g., database timeout or driver exception), the cascading operation immediately halts, logs the failure, and **does not delete the parent note**. The endpoint returns HTTP `503 Service Unavailable`, preventing orphaned attachments and ensuring the system never falsely reports successful note deletion when underlying cleanup has failed.
 
 ---
 
 ## 5. Error Handling Strategy
 
-FastAPI provides an exception handler hierarchy. Planned strategy:
+FastAPI provides an exception handler hierarchy:
 
 1. **PyMongo Driver Errors**:
-   - `PyMongoError` (base database connection/query exception) mapped to `503 Service Unavailable` with a structured error response, preventing raw database tracebacks from leaking.
-   - `DuplicateKeyError` mapped to `409 Conflict`.
+   - `PyMongoError` (base database connection/query exception) mapped to `503 Service Unavailable` with a structured error response, preventing raw database tracebacks, connection strings, or credentials from leaking.
 2. **Resource Resolution Errors**:
    - Non-existent `ObjectId` or missing document queries mapped to `404 Not Found`.
-   - Malformed `ObjectId` hex strings caught at input validation and mapped to `422 Unprocessable Entity` or `400 Bad Request`.
+   - Malformed `ObjectId` hex strings caught at input validation and mapped to `400 Bad Request`.
 3. **Data Validation Errors**:
    - Pydantic validation errors caught by FastAPI and converted to uniform `422 Unprocessable Entity` JSON responses.
+4. **Payload & Format Errors**:
+   - Oversized uploads return HTTP `413 Content Too Large`.
+   - Disallowed or spoofed file types return HTTP `415 Unsupported Media Type`.
+   - Empty files return HTTP `400 Bad Request`.
 
 ---
 
-## 6. Indexing & Query Strategy (Planned)
+## 6. Indexing & Query Strategy
 
-To ensure queries remain efficient and demonstrate database fundamentals during the viva:
-1. **Single-field index on `created_at`** (descending) for fast reverse-chronological retrieval.
-2. **Multikey index on `tags`** for tag-based filtering.
-3. **Compound index on `(tags, created_at)`** for filtered chronological feeds.
-4. **Text index on `title` and `body`** to support native MongoDB full-text search with relevance scoring (`$meta: "textScore"`).
-5. **Vector Index (Atlas)**: Configured on `embedding` field with cosine similarity for Milestone 6.
+To ensure queries remain efficient and demonstrate database fundamentals during academic evaluation:
+1. **`notes.created_at` (DESCENDING)**: Single-field descending index (`idx_notes_created_at_desc`) supports `GET /api/notes` ordering newest first without in-memory sort stages.
+2. **`attachments.note_id` (ASCENDING)**: Single-field index (`idx_attachments_note_id`) supports fast attachment listing (`GET /api/notes/{note_id}/attachments`) and cascading cleanup lookups without full-collection scans.
+3. **Multikey index on `notes.tags`** (Planned): Tag-based filtering for Milestone 4.
+4. **Text index on `title` and `content`** (Planned): MongoDB native full-text search with relevance scoring for Milestone 4.
+5. **Vector Index (Atlas)** (Planned): Configured on `embedding` field with cosine similarity for Milestone 6.
+

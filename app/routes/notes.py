@@ -3,11 +3,12 @@ from datetime import datetime, timezone
 from typing import List
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from gridfs import GridFS
 from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from app.db import get_database
+from app.db import get_database, get_gridfs
 from app.schemas import NoteCreate, NoteUpdate, NoteResponse
 
 logger = logging.getLogger(__name__)
@@ -168,15 +169,52 @@ def update_note(
 @router.delete(
     "/{note_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a research note by ID",
+    summary="Delete a research note by ID with cascading attachment cleanup",
 )
 def delete_note(
     note_id: str,
     db: Database = Depends(get_database),
+    fs: GridFS = Depends(get_gridfs),
 ) -> Response:
-    """Delete a research note document by its ObjectId."""
+    """Delete a research note and safely clean up all linked GridFS attachments.
+    
+    If cleaning up child attachments fails, the parent note is NOT deleted,
+    preventing inconsistent or partial deletions.
+    """
     oid = validate_object_id(note_id)
 
+    # 1. Verify note exists first
+    try:
+        note = db["notes"].find_one({"_id": oid})
+    except PyMongoError as err:
+        logger.error("Failed to verify note %s before delete: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while locating note",
+        )
+
+    if note is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    # 2. Find and clean up child attachments
+    try:
+        child_attachments = list(db["attachments"].find({"note_id": oid}))
+        for att in child_attachments:
+            file_id = att.get("file_id")
+            if file_id is not None:
+                fs.delete(file_id)
+            db["attachments"].delete_one({"_id": att["_id"]})
+    except Exception as err:
+        logger.error("Cascading cleanup failed for note %s attachments: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to clean up linked attachments; note was not deleted",
+        )
+
+    # 3. Delete parent note document
     try:
         result = db["notes"].delete_one({"_id": oid})
     except PyMongoError as err:

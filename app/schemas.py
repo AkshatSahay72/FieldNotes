@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -96,3 +96,47 @@ class NoteResponse(BaseModel):
     tags: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class AttachmentResponse(BaseModel):
+    """Schema for research note image attachment response."""
+
+    id: str = Field(
+        ...,
+        description="Unique string representation of MongoDB ObjectId for attachment metadata",
+        examples=["507f1f77bcf86cd799439011"],
+    )
+    note_id: str = Field(
+        ...,
+        description="Parent note ObjectId string",
+        examples=["507f1f77bcf86cd799439011"],
+    )
+    filename: str = Field(
+        ...,
+        description="Sanitized display filename",
+        examples=["soil_sample_01.jpg"],
+    )
+    content_type: str = Field(
+        ...,
+        description="MIME type of the attachment",
+        examples=["image/jpeg", "image/png", "image/webp"],
+    )
+    file_size: int = Field(
+        ...,
+        description="File size in bytes",
+        examples=[204850],
+    )
+    caption: Optional[str] = Field(
+        default=None,
+        description="User-authored short caption or title",
+        examples=["Soil stratification cross-section"],
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="User-authored contextual description",
+        examples=["Photograph of soil pit taken at 15cm depth."],
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC creation timestamp",
+    )

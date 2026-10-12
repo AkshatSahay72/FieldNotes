@@ -1,9 +1,12 @@
 import logging
 from typing import Optional
-from fastapi import Request, HTTPException, status
-from pymongo import MongoClient, DESCENDING
+from fastapi import Request, HTTPException, status, Depends
+from pymongo import MongoClient, DESCENDING, ASCENDING
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
+import gridfs
+from gridfs import GridFS
+
 from app.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -54,11 +57,14 @@ def close_mongo_client(client: Optional[MongoClient]) -> None:
 def init_db_indexes(db: Optional[Database]) -> None:
     """Create justified indexes on MongoDB collections.
     
-    Index justification:
+    Index justifications:
     - notes.created_at (DESCENDING): The 'GET /api/notes' endpoint retrieves
       notes ordered by newest first (created_at DESC). Creating a B-tree index
       on this field avoids memory-intensive in-memory sort stages and ensures
       efficient index-covered scans as notes volume scales.
+    - attachments.note_id (ASCENDING): All attachment operations (listing,
+      lookup, and cascading deletion) query by parent note_id. Indexing note_id
+      ensures fast lookups without full-collection scans.
     """
     if db is None:
         return
@@ -67,7 +73,11 @@ def init_db_indexes(db: Optional[Database]) -> None:
             [("created_at", DESCENDING)],
             name="idx_notes_created_at_desc",
         )
-        logger.info("MongoDB index on notes.created_at created/verified.")
+        db["attachments"].create_index(
+            [("note_id", ASCENDING)],
+            name="idx_attachments_note_id",
+        )
+        logger.info("MongoDB indexes on notes and attachments created/verified.")
     except Exception as err:
         logger.warning("Could not initialize database indexes: %s", type(err).__name__)
 
@@ -84,3 +94,8 @@ def get_database(request: Request) -> Database:
             detail="Database service is currently unavailable",
         )
     return db
+
+
+def get_gridfs(db: Database = Depends(get_database)) -> GridFS:
+    """FastAPI dependency to retrieve the GridFS instance for the active database."""
+    return gridfs.GridFS(db)

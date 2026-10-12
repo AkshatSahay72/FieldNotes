@@ -8,6 +8,7 @@ from app.config import Settings, get_settings
 from app.db import create_mongo_client, close_mongo_client, ping_database, init_db_indexes
 from app.schemas import HealthResponse
 from app.routes.notes import router as notes_router
+from app.routes.attachments import router as attachments_router
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,13 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="Fieldnote API",
         description="Research Notes & Evidence Management System API",
-        version="0.2.0",
+        version="0.3.0",
         lifespan=lifespan,
     )
 
     # Register modular routers
     application.include_router(notes_router)
+    application.include_router(attachments_router)
 
     @application.get(
         "/health",

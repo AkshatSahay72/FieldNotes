@@ -7,8 +7,8 @@
 | **Milestone 0** | Documentation & Minimal Backend Foundation | **COMPLETED** |
 | **Milestone 1** | MongoDB Connection & Health Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 2** | Research Notes Data Model & CRUD Operations | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 3** | Image Attachments & Evidence Metadata | **NOT IMPLEMENTED** (Next Approved Milestone) |
-| **Milestone 4** | Indexing & Efficient Querying | **NOT IMPLEMENTED** |
+| **Milestone 3** | Image Attachments with PyMongo GridFS | **COMPLETED & FULLY TESTED** |
+| **Milestone 4** | Indexing & Efficient Querying | **NOT IMPLEMENTED** (Next Milestone) |
 | **Milestone 5** | Analytics & Aggregation Pipelines | **NOT IMPLEMENTED** |
 | **Milestone 6** | Semantic Note Retrieval (Atlas Vector Search) | **NOT IMPLEMENTED** |
 | **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
@@ -99,20 +99,59 @@
 
 ---
 
+## Milestone 3 Log: Image Attachments with PyMongo GridFS
+
+- **Date**: 2026-10-13
+- **Objective**: Implement image attachments linked to existing research notes using FastAPI `UploadFile`, PyMongo `GridFS` for binary chunks, and a MongoDB `attachments` collection for metadata.
+- **Verification Status**:
+  - **Automated Test Suite**: 55 tests executed and passing (100% pass rate) with zero failures and zero warnings.
+  - **Isolated Test Doubles**: In-memory `FakeCollection`, `FakeDatabase`, and `FakeGridFS` test doubles verify upload validation, format checking, bounded chunk reading, structural validation, downloads, deletions, upload failure cleanup, and cascading failure safety without mutating Atlas data.
+  - **Live MongoDB Atlas Smoke Verification**: Verified on live MongoDB Atlas cluster using disposable test records and a tiny 1x1 JPEG fixture (`scratch/smoke_test_atlas_attachments.py`). Confirmed GridFS storage (`fs.put`), metadata insertion, reading back, and complete cleanup teardown with zero residual records. Real research data was completely untouched.
+  - **Index Verification**: Added ascending index `idx_attachments_note_id` on `attachments` collection (`note_id: 1`).
+
+### Files Created or Modified:
+1. `requirements.txt` *(Modified)* — Added `pillow>=10.0.0` for structural image payload verification.
+2. `app/schemas.py` *(Modified)* — Added `AttachmentResponse` schema returning `id`, `note_id`, `file_id`, `filename`, `content_type`, `file_size`, `caption`, `description`, and UTC `created_at`.
+3. `app/db.py` *(Modified)* — Added `get_gridfs(db)` dependency returning `gridfs.GridFS(db)`, and added index `idx_attachments_note_id` (`[("note_id", ASCENDING)]`) to `init_db_indexes`.
+4. `app/routes/attachments.py` *(Created)* — Implemented image attachment endpoints:
+   - `POST /api/notes/{note_id}/attachments` (201 Created): Uploads image via bounded streaming (up to 5 MB), checks true magic bytes, performs structural validation with Pillow, writes binary data to GridFS, stores metadata in `attachments` collection. Cleans up orphaned GridFS binary if metadata insertion fails.
+   - `GET /api/notes/{note_id}/attachments` (200 OK): Lists attachments for a note.
+   - `GET /api/notes/{note_id}/attachments/{attachment_id}` (200 OK): Retrieves attachment metadata.
+   - `GET /api/notes/{note_id}/attachments/{attachment_id}/download` (200 OK): Streams binary chunks from GridFS with verified `Content-Type`, `Content-Disposition: inline`, and safe `grid_out.close()` in generator `finally`.
+   - `DELETE /api/notes/{note_id}/attachments/{attachment_id}` (204 No Content): Deletes binary chunks from GridFS and document from `attachments`.
+5. `app/routes/notes.py` *(Modified)* — Updated `delete_note` (`DELETE /api/notes/{note_id}`) to implement cascading deletion: removes linked GridFS files and attachment metadata sequentially per attachment before deleting the parent note document. Includes partial failure protection: if cleanup fails, the parent note is preserved (NOT deleted), HTTP 503 is returned, and subsequent retries can proceed safely without falsely claiming all attachments remain intact.
+6. `app/main.py` *(Modified)* — Registered `attachments_router` and incremented app version to `0.3.0`.
+7. `tests/test_attachments.py` *(Created)* — 16 isolated unit/integration tests covering upload success (JPEG, PNG, WebP), invalid MIME type rejection (415), fake MIME header sniffing rejection (415), corrupted structural payload rejection (415), empty file rejection (400), 5 MB bounded reading rejection (413), missing note (404), malformed note ID (400), filename sanitization, listing, metadata retrieval, binary streaming download, attachment deletion (204), orphaned GridFS cleanup on upload failure (503), cascading note deletion, cascading failure safety (503), and cascading delete retry after partial failure.
+8. `tests/test_notes.py` *(Modified)* — Added `get_gridfs` to `app.db` import and dependency overrides.
+9. `tests/test_db.py` *(Modified)* — Updated `test_init_db_indexes` to verify indexes on both `notes` and `attachments` collections.
+10. `docs/ARCHITECTURE.md` *(Modified)* — Documented GridFS binary storage architecture, `attachments` schema, bounded reading, Pillow structural verification, safe streaming, and cascading cleanup failure handling.
+
+### Key Architectural & Engineering Decisions Made:
+- **PyMongo GridFS Storage**: Binary data is stored directly in MongoDB via GridFS (`fs.files` and `fs.chunks`), keeping binary chunks partitioned in 255 KB chunks while metadata resides in the `attachments` collection. Multi-document operations are explicitly handled as non-atomic with resilient cleanup logic.
+- **Bounded Reading (Doops / Memory Exhaustion Defense)**: Uploads are read incrementally in 64 KB chunks up to a strict 5 MB limit. If the stream exceeds 5 MB, it aborts immediately with HTTP `413 Content Too Large` without buffering the entire file into server RAM.
+- **Structural Image Validation (Pillow Dependency)**: Beyond sniffing header magic bytes (JPEG `\xff\xd8\xff`, PNG `\x89PNG\r\n\x1a\n`, WebP `RIFF....WEBP`), complete structural integrity is verified via `Image.open().verify()` using the lightweight, standard `Pillow` dependency. Corrupted payloads or executables disguised with valid image headers are rejected with HTTP `415 Unsupported Media Type`.
+- **Upload Failure Cleanup (Orphan Prevention)**: If `fs.put` succeeds but writing metadata to `db["attachments"]` fails, the newly written GridFS file is immediately purged in the exception handler.
+- **Filename Path Traversal Prevention**: Filenames are sanitized via `pathlib.Path().name` and regex alphanumeric filtering before storage, preventing path traversal attacks and header injection. Client filenames are never used as server filesystem paths.
+- **Cascading Deletion Failure Safety & Safe Retries**: Deleting a parent note purges child GridFS binaries and metadata records sequentially per attachment. If any step fails, the operation halts, logs an error, preserves the parent note, and returns HTTP `503 Service Unavailable`. Deleting per attachment ensures that partial failures do not falsely claim all attachments are still intact, and allows the delete operation to be safely retried.
+- **Index Justification**: Added `idx_attachments_note_id` (`[("note_id", 1)]`) on `attachments`. Justification: All attachment operations (listing, metadata lookups, and cascading deletion) filter by parent `note_id`. Indexing this field ensures fast index scans without full-collection scans.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Attachment upload, metadata persistence, and file storage (`/attachments`).
 - [NOT IMPLEMENTED] MongoDB text search indexes and query explainability (Milestone 4).
 - [NOT IMPLEMENTED] MongoDB aggregation pipelines for analytics (`/analytics`, Milestone 5).
 - [NOT IMPLEMENTED] Vector embeddings generation and Atlas Vector Search queries (`/search`, Milestone 6).
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
+- [NOT IMPLEMENTED] OCR, computer vision, or AI-generated captions.
 
 ---
 
 ## Next Approved Milestone
 
-- **Milestone 3**: Image Attachments & Evidence Metadata
-  - Focus: File upload handling for image attachments, storing attachment metadata and user descriptions/captions, linking attachments to notes.
+- **Milestone 4**: Indexing & Efficient Querying
+  - Focus: Compound indexes, text search indexes on notes, query explainability, and index usage validation.
   - Required before starting: Explicit user approval to proceed.
+

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from pymongo.errors import PyMongoError
 
 from app.main import app
-from app.db import get_database
+from app.db import get_database, get_gridfs
 from app.config import Settings, get_settings
 
 
@@ -74,11 +74,18 @@ class FakeCollection:
         return name or "idx"
 
 
+class FakeGridFS:
+    """In-memory test double for GridFS."""
+
+    def delete(self, file_id):
+        pass
+
+
 class FakeDatabase:
     """In-memory test database double simulating PyMongo Database."""
 
     def __init__(self):
-        self._collections = {"notes": FakeCollection()}
+        self._collections = {"notes": FakeCollection(), "attachments": FakeCollection()}
 
     def __getitem__(self, name):
         if name not in self._collections:
@@ -103,6 +110,7 @@ def client(fake_db):
     )
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_database] = lambda: fake_db
+    app.dependency_overrides[get_gridfs] = lambda: FakeGridFS()
 
     with TestClient(app) as test_client:
         yield test_client
@@ -351,6 +359,7 @@ def test_database_error_handling_returns_503():
     )
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_database] = lambda: ErrorDatabase()
+    app.dependency_overrides[get_gridfs] = lambda: FakeGridFS()
 
     with TestClient(app) as test_client:
         post_res = test_client.post("/api/notes", json={"title": "T", "content": "C"})
