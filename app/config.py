@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # File storage configuration for evidence attachments (Milestone 3)
     upload_dir: str = Field(default="uploads", alias="UPLOAD_DIR")
 
+    # Vector embedding configuration (Milestone 6)
+    embedding_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        alias="EMBEDDING_MODEL",
+        description="SentenceTransformers model identifier for vector embeddings",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

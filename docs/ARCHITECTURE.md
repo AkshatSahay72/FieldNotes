@@ -50,7 +50,8 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Querying & Text Search** | Tag filtering (`$in`), native text search (`$text`), pagination, deterministic sort | **IMPLEMENTED** (`GET /api/notes` with `tag`, `tags`, `q`, `skip`, `limit`, and `_id` tie-breaker) |
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
 | **Aggregation Pipelines** | Multi-stage analytical queries | **IMPLEMENTED** (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$lookup`, `$dateToString`) |
-| **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6) |
+| **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestone 6B: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script) |
+| **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6C/6D) |
 
 ---
 
@@ -70,6 +71,7 @@ The application uses **12-factor configuration** driven entirely by environment 
 - `APP_PORT`: Port binding (default: `8000`).
 - `MONGODB_SERVER_SELECTION_TIMEOUT_MS`: Timeout for MongoDB commands before failing fast (default: `2000`).
 - `UPLOAD_DIR`: Optional local filesystem storage directory.
+- `EMBEDDING_MODEL`: SentenceTransformers model identifier (default: `sentence-transformers/all-MiniLM-L6-v2`).
 
 ---
 
@@ -78,12 +80,14 @@ The application uses **12-factor configuration** driven entirely by environment 
 Fieldnote avoids relational tables and instead utilizes idiomatic document modeling across two primary collections (`notes` and `attachments`) alongside MongoDB GridFS buckets (`fs.files` and `fs.chunks`).
 
 ### 4.1 Collection: `notes`
-Stores the primary research notes, tags, and timestamps.
+Stores the primary research notes, tags, timestamps, and vector embeddings.
 
 - `_id`: `ObjectId` (MongoDB primary key)
 - `title`: `str` (required) — Concise title of the observation or finding
 - `content`: `str` (required) — Markdown or plain text content of the note
 - `tags`: `list[str]` (required, default `[]`) — Categorical tags for classification
+- `embedding`: `list[float]` (384 finite floats) — Normalized vector embedding generated from `title + "\n\n" + content`
+- `embedding_model`: `str` — Model name tag (e.g. `sentence-transformers/all-MiniLM-L6-v2`)
 - `created_at`: `datetime` (UTC timestamp, indexed DESC)
 - `updated_at`: `datetime` (UTC timestamp)
 

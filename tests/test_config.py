@@ -19,6 +19,16 @@ def test_settings_load_with_valid_mongodb_uri(monkeypatch):
     assert settings.app_host == "127.0.0.1"
     assert settings.app_port == 8000
     assert settings.upload_dir == "uploads"
+    assert settings.embedding_model == "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def test_settings_custom_embedding_model(monkeypatch):
+    """Test that EMBEDDING_MODEL environment variable overrides the default model."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("EMBEDDING_MODEL", "custom-org/custom-model")
+
+    settings = Settings()
+    assert settings.embedding_model == "custom-org/custom-model"
 
 
 def test_settings_missing_mongodb_uri_raises_validation_error(monkeypatch):

@@ -10,6 +10,11 @@ from pymongo.errors import PyMongoError
 
 from app.db import get_database, get_gridfs
 from app.schemas import NoteCreate, NoteUpdate, NoteResponse
+from app.services.embedding import (
+    EmbeddingService,
+    EmbeddingServiceError,
+    get_embedding_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,13 +114,26 @@ def build_notes_query(
 def create_note(
     note_in: NoteCreate,
     db: Database = Depends(get_database),
+    embedding_service: EmbeddingService = Depends(get_embedding_service),
 ) -> NoteResponse:
-    """Create a new research note document in MongoDB."""
+    """Create a new research note document in MongoDB with vector embedding."""
+    try:
+        embedding_text = embedding_service.prepare_text(note_in.title, note_in.content)
+        vector = embedding_service.generate_embedding(embedding_text)
+    except (EmbeddingServiceError, ValueError) as err:
+        logger.error("Failed to generate embedding during note creation: %s", type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding generation failed while creating note",
+        )
+
     now = datetime.now(timezone.utc)
     note_doc = {
         "title": note_in.title,
         "content": note_in.content,
         "tags": note_in.tags,
+        "embedding": vector,
+        "embedding_model": embedding_service.model_name,
         "created_at": now,
         "updated_at": now,
     }
@@ -226,22 +244,55 @@ def update_note(
     note_id: str,
     note_in: NoteUpdate,
     db: Database = Depends(get_database),
+    embedding_service: EmbeddingService = Depends(get_embedding_service),
 ) -> NoteResponse:
-    """Update title, content, and tags of an existing note."""
+    """Update title, content, and tags of an existing note with vector embedding recomputation."""
     oid = validate_object_id(note_id)
+
+    try:
+        existing = db["notes"].find_one({"_id": oid})
+    except PyMongoError as err:
+        logger.error("Failed to fetch note %s before update: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while fetching note",
+        )
+
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
     now = datetime.now(timezone.utc)
+    title_changed = existing.get("title") != note_in.title
+    content_changed = existing.get("content") != note_in.content
+    needs_new_embedding = title_changed or content_changed
+
+    update_fields = {
+        "title": note_in.title,
+        "content": note_in.content,
+        "tags": note_in.tags,
+        "updated_at": now,
+    }
+
+    if needs_new_embedding:
+        try:
+            embedding_text = embedding_service.prepare_text(note_in.title, note_in.content)
+            vector = embedding_service.generate_embedding(embedding_text)
+            update_fields["embedding"] = vector
+            update_fields["embedding_model"] = embedding_service.model_name
+        except (EmbeddingServiceError, ValueError) as err:
+            logger.error("Failed to recompute embedding for note %s: %s", note_id, type(err).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Embedding generation failed while updating note",
+            )
 
     try:
         updated_doc = db["notes"].find_one_and_update(
             {"_id": oid},
-            {
-                "$set": {
-                    "title": note_in.title,
-                    "content": note_in.content,
-                    "tags": note_in.tags,
-                    "updated_at": now,
-                }
-            },
+            {"$set": update_fields},
             return_document=ReturnDocument.AFTER,
         )
     except PyMongoError as err:

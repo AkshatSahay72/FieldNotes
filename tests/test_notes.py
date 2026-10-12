@@ -8,6 +8,7 @@ from pymongo.errors import PyMongoError
 from app.main import app
 from app.db import get_database, get_gridfs
 from app.config import Settings, get_settings
+from app.services.embedding import get_embedding_service
 
 
 class FakeCursor:
@@ -128,6 +129,39 @@ class FakeDatabase:
         return self._collections[name]
 
 
+class FakeEmbeddingService:
+    """In-memory test double for EmbeddingService returning deterministic unit vectors."""
+
+    EXPECTED_DIMENSION = 384
+    model_name = "sentence-transformers/all-MiniLM-L6-v2"
+
+    def __init__(self, fail_generation: bool = False):
+        self.fail_generation = fail_generation
+        self.call_count = 0
+
+    def prepare_text(self, title: str, content: str) -> str:
+        if not title or not title.strip():
+            raise ValueError("Embedding input title cannot be empty or whitespace-only")
+        combined = f"{title}\n\n{content}"
+        if not combined.strip():
+            raise ValueError("Embedding input text cannot be empty or whitespace-only")
+        return combined
+
+    def generate_embedding(self, text: str):
+        self.call_count += 1
+        if self.fail_generation:
+            from app.services.embedding import InferenceError
+            raise InferenceError("Deterministic mock inference failure")
+        val = 1.0 / (384 ** 0.5)
+        return [val] * 384
+
+
+@pytest.fixture
+def fake_embedding():
+    """Provides a fresh fake embedding service tracking inference invocations."""
+    return FakeEmbeddingService()
+
+
 @pytest.fixture
 def fake_db():
     """Provides a fresh isolated fake database for each test."""
@@ -135,8 +169,8 @@ def fake_db():
 
 
 @pytest.fixture
-def client(fake_db):
-    """Test client with isolated settings and in-memory fake database."""
+def client(fake_db, fake_embedding):
+    """Test client with isolated settings, in-memory fake database, and fake embedding service."""
     test_settings = Settings(
         MONGODB_URI="mongodb://localhost:27017",
         DATABASE_NAME="test_db",
@@ -146,6 +180,7 @@ def client(fake_db):
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_database] = lambda: fake_db
     app.dependency_overrides[get_gridfs] = lambda: FakeGridFS()
+    app.dependency_overrides[get_embedding_service] = lambda: fake_embedding
 
     with TestClient(app) as test_client:
         yield test_client
@@ -629,6 +664,7 @@ def test_database_error_handling_returns_503():
     app.dependency_overrides[get_settings] = lambda: test_settings
     app.dependency_overrides[get_database] = lambda: ErrorDatabase()
     app.dependency_overrides[get_gridfs] = lambda: FakeGridFS()
+    app.dependency_overrides[get_embedding_service] = lambda: FakeEmbeddingService()
 
     with TestClient(app) as test_client:
         post_res = test_client.post("/api/notes", json={"title": "T", "content": "C"})
@@ -649,3 +685,116 @@ def test_database_error_handling_returns_503():
         assert del_res.status_code == 503
 
     app.dependency_overrides.clear()
+
+
+# ==============================================================================
+# Embedding Lifecycle Integration Tests (Milestone 6B)
+# ==============================================================================
+
+def test_create_note_stores_embedding_and_model_inline(client, fake_db):
+    """Verify create_note generates and persists embedding and embedding_model inline in document."""
+    res = client.post(
+        "/api/notes",
+        json={"title": "Canopy Density", "content": "Measured 82% closure.", "tags": ["forestry"]},
+    )
+    assert res.status_code == 201
+    body = res.json()
+    note_id = ObjectId(body["id"])
+
+    # Document in MongoDB collection must contain embedding vector and model
+    stored = fake_db["notes"].docs[note_id]
+    assert "embedding" in stored
+    assert len(stored["embedding"]) == 384
+    assert stored["embedding_model"] == "sentence-transformers/all-MiniLM-L6-v2"
+
+    # API response contract must NEVER expose embedding vector or model
+    assert "embedding" not in body
+    assert "embedding_model" not in body
+
+
+def test_create_note_fails_when_embedding_inference_fails(client, fake_db, fake_embedding):
+    """Verify note is NOT inserted into MongoDB if embedding generation fails."""
+    fake_embedding.fail_generation = True
+    res = client.post(
+        "/api/notes",
+        json={"title": "Failing Note", "content": "Should not be persisted."},
+    )
+    assert res.status_code == 503
+    assert "Embedding generation failed" in res.json()["detail"]
+    assert len(fake_db["notes"].docs) == 0
+
+
+def test_update_note_recomputes_embedding_on_title_change(client, fake_db, fake_embedding):
+    """Verify updating title triggers embedding recomputation."""
+    create_res = client.post(
+        "/api/notes",
+        json={"title": "Initial Title", "content": "Constant content.", "tags": ["tag1"]},
+    )
+    note_id = create_res.json()["id"]
+    initial_count = fake_embedding.call_count
+    assert initial_count == 1
+
+    update_res = client.put(
+        f"/api/notes/{note_id}",
+        json={"title": "Updated Title", "content": "Constant content.", "tags": ["tag1"]},
+    )
+    assert update_res.status_code == 200
+    assert fake_embedding.call_count == 2
+
+
+def test_update_note_recomputes_embedding_on_content_change(client, fake_db, fake_embedding):
+    """Verify updating content triggers embedding recomputation."""
+    create_res = client.post(
+        "/api/notes",
+        json={"title": "Constant Title", "content": "Initial content.", "tags": ["tag1"]},
+    )
+    note_id = create_res.json()["id"]
+    assert fake_embedding.call_count == 1
+
+    update_res = client.put(
+        f"/api/notes/{note_id}",
+        json={"title": "Constant Title", "content": "Updated content.", "tags": ["tag1"]},
+    )
+    assert update_res.status_code == 200
+    assert fake_embedding.call_count == 2
+
+
+def test_update_note_skips_embedding_recomputation_on_tag_only_change(client, fake_db, fake_embedding):
+    """Verify tag-only update preserves existing embedding and does NOT invoke inference."""
+    create_res = client.post(
+        "/api/notes",
+        json={"title": "Constant Title", "content": "Constant content.", "tags": ["initial"]},
+    )
+    note_id = create_res.json()["id"]
+    assert fake_embedding.call_count == 1
+
+    update_res = client.put(
+        f"/api/notes/{note_id}",
+        json={"title": "Constant Title", "content": "Constant content.", "tags": ["updated", "new_tag"]},
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["tags"] == ["updated", "new_tag"]
+    # Inference must NOT be called again
+    assert fake_embedding.call_count == 1
+
+
+def test_update_note_fails_when_embedding_fails_without_modifying_db(client, fake_db, fake_embedding):
+    """Verify failed inference on title/content change returns 503 and does NOT persist changed text."""
+    create_res = client.post(
+        "/api/notes",
+        json={"title": "Original Title", "content": "Original content.", "tags": ["tag1"]},
+    )
+    note_id = ObjectId(create_res.json()["id"])
+
+    fake_embedding.fail_generation = True
+    update_res = client.put(
+        f"/api/notes/{str(note_id)}",
+        json={"title": "Corrupted Title", "content": "Corrupted content.", "tags": ["tag1"]},
+    )
+    assert update_res.status_code == 503
+    assert "Embedding generation failed" in update_res.json()["detail"]
+
+    # Verify original document in DB is unchanged
+    stored = fake_db["notes"].docs[note_id]
+    assert stored["title"] == "Original Title"
+    assert stored["content"] == "Original content."

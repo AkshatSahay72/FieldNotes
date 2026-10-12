@@ -10,7 +10,8 @@
 | **Milestone 3** | Image Attachments with PyMongo GridFS | **COMPLETED & FULLY TESTED** |
 | **Milestone 4** | Indexing & Efficient Querying | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 5** | Analytics & Aggregation Pipelines | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 6** | Semantic Note Retrieval (Atlas Vector Search) | **NOT IMPLEMENTED** (Next Milestone) |
+| **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
+| **Milestone 6C & 6D** | Semantic Search Endpoint & Atlas Vector Indexing | **NOT IMPLEMENTED** (Next Milestone) |
 | **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
 
 ---
@@ -218,10 +219,53 @@
 
 ---
 
+## Milestone 6B Log: Embedding Service & Note Lifecycle Integration
+
+- **Date**: 2026-10-13
+- **Objective**: Implement the vector embedding service (`app/services/embedding.py`), integrate embedding generation into note creation and updates, build an idempotent concurrency-safe backfill script (`scripts/backfill_embeddings.py`), and test all functionality in isolation.
+- **Verification Status**: Verified clean test execution across 113 pytest tests (87 existing + 26 new embedding/lifecycle/backfill tests). Verified dry-run and error handling semantics without network downloads during test execution.
+
+### Files Created:
+1. `app/services/__init__.py` — Application services package marker.
+2. `app/services/embedding.py` — `EmbeddingService` implementation with lazy-loaded singleton `sentence-transformers/all-MiniLM-L6-v2`, explicit empty-input validation, 384-dimensional finite vector verification, unit normalization, and sanitized exception handling.
+3. `scripts/__init__.py` — Scripts package marker.
+4. `scripts/backfill_embeddings.py` — Idempotent batch backfill CLI with cursor streaming, concurrency guard matching on `_id` and `updated_at`, `--dry-run` simulation mode, sanitized summary output, and non-zero exit codes on error.
+5. `tests/test_embedding.py` — 11 isolated unit tests validating text formatting, non-empty validation, normalization, dimension checking, finite-value verification, exception wrapping, and dependency singleton behavior.
+6. `tests/test_backfill.py` — 8 isolated tests validating backfill updates, idempotency on up-to-date notes, outdated model detection, dry-run simulation, concurrency conflicts, fault tolerance, and CLI exit codes.
+
+### Files Modified:
+1. `app/config.py`:
+   - Added `embedding_model: str = Field(default="sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL")` to `Settings`.
+2. `.env.example`:
+   - Documented `EMBEDDING_MODEL` setting.
+3. `requirements.txt`:
+   - Declared `sentence-transformers>=3.0.0` dependency.
+4. `app/routes/notes.py`:
+   - Integrated `EmbeddingService` dependency into `create_note` (inserts inline `embedding` and `embedding_model`).
+   - Integrated `EmbeddingService` into `update_note` (recomputes embedding if `title` or `content` changed, skips if tag-only, atomic update).
+   - Preserved `NoteResponse` contract (vector is never exposed in normal CRUD API responses).
+5. `tests/test_notes.py`:
+   - Injected deterministic `FakeEmbeddingService` test double into fixtures.
+   - Added 6 lifecycle integration tests covering inline persistence, API response contract preservation, 503 inference rollback, title change recomputation, content change recomputation, and tag-only skipping.
+6. `tests/test_config.py`:
+   - Added tests verifying default and environment-variable overridden `EMBEDDING_MODEL` setting.
+
+### Key Architectural & Engineering Decisions Made:
+- **Cosine Similarity via Unit Normalization**: Used `SentenceTransformer.encode(..., normalize_embeddings=True)` ensuring dot product equals cosine similarity, matching MongoDB Atlas Vector Search `cosine` metric configuration.
+- **Strict Input Validation**: The embedding service rejects empty or whitespace-only inputs, preventing silent substitution of zero vectors or garbage representations.
+- **Contract Compatibility**: `NoteResponse` schemas remain untouched. The embedding vector and model tag remain private storage concerns inline within the note document and are never returned in CRUD responses.
+- **Atomicity on Update**: Note content and embedding vector are written together in a single MongoDB `$set` update operation via `find_one_and_update`. If inference fails, no partial updates or stale embeddings are saved.
+- **Tag-Only Skip Optimization**: Note updates that modify only tags bypass inference entirely, saving CPU and GPU compute cycles.
+- **Concurrency-Safe Backfill**: Backfill uses conditional updates matching `_id` and existing `updated_at`. If a note was modified concurrently during inference, the update matches 0 documents, records a skip, and never overwrites newer user revisions.
+- **Offline Test Isolation**: Tests use deterministic test doubles (`FakeEmbeddingService`, `DummyModel`) preventing slow Hugging Face model downloads and ensuring consistent, reproducible test runs.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Vector embeddings generation and Atlas Vector Search queries (`/search`, Milestone 6).
+- [NOT IMPLEMENTED] Semantic search endpoint (`GET /api/search/semantic`, Milestone 6C).
+- [NOT IMPLEMENTED] MongoDB Atlas Vector Search index creation (Milestone 6D).
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
 - [NOT IMPLEMENTED] OCR, computer vision, or AI-generated captions.
@@ -230,7 +274,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search)
-  - Focus: Generating vector embeddings for note content, defining an Atlas Vector Search index, and implementing semantic similarity retrieval (`/api/search`).
+- **Milestone 6C**: Semantic Search Endpoint Implementation
+  - Focus: Implementing semantic query retrieval endpoint with Pydantic query schemas, embedding the query string, and integrating `$vectorSearch`.
   - Required before starting: Explicit user approval to proceed.
 
