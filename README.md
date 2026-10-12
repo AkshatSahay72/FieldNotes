@@ -34,13 +34,13 @@ This project is tailored for an academic evaluation / viva setting. It deliberat
 
 The project is built incrementally in strict, reviewable milestones:
 
-- **Milestone 0**: Documentation & Minimal Backend Foundation *(Current)*
-- **Milestone 1**: MongoDB Connection & Health Lifecycle
-- **Milestone 2**: Research Notes Data Model & CRUD Operations
-- **Milestone 3**: Image Attachments & Evidence Metadata
-- **Milestone 4**: Indexing & Efficient Querying
-- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines
-- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search)
+- **Milestone 0**: Documentation & Minimal Backend Foundation *(Completed)*
+- **Milestone 1**: MongoDB Connection & Health Lifecycle *(Completed)*
+- **Milestone 2**: Research Notes Data Model & CRUD Operations *(Completed)*
+- **Milestone 3**: Image Attachments & Evidence Metadata with GridFS *(Completed)*
+- **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
+- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Next Milestone)*
+- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Future)*
 - **Milestone 7**: Minimal Frontend & Deployment Preparation *(Future)*
 
 Documentation files in `docs/` serve as the source of truth:
@@ -50,7 +50,70 @@ Documentation files in `docs/` serve as the source of truth:
 
 ---
 
-## Quickstart (Milestone 0 Foundation)
+## API Usage Examples
+
+### 1. Research Notes & Querying (`/api/notes`)
+
+- **Create a Note**:
+  ```bash
+  curl -X POST http://127.0.0.1:8000/api/notes \
+    -H "Content-Type: application/json" \
+    -d '{"title": "Soil Sample 4A", "content": "Observed high nitrogen levels near plot B.", "tags": ["soil", "nitrogen", "field"]}'
+  ```
+
+- **List All Notes (Unfiltered, Newest First)**:
+  ```bash
+  curl http://127.0.0.1:8000/api/notes
+  ```
+
+- **Filter by Tags (OR Semantics)**:
+  ```bash
+  # Repeated parameter convention:
+  curl "http://127.0.0.1:8000/api/notes?tag=soil&tag=water"
+
+  # Or comma-separated alias:
+  curl "http://127.0.0.1:8000/api/notes?tags=soil,water"
+  ```
+
+- **MongoDB Native Text Search**:
+  ```bash
+  curl "http://127.0.0.1:8000/api/notes?q=nitrogen"
+  ```
+
+- **Combined Text Search & Tag Filtering**:
+  ```bash
+  curl "http://127.0.0.1:8000/api/notes?q=sample&tag=soil"
+  ```
+
+- **Deterministic Pagination**:
+  ```bash
+  # Fetch second page of 10 notes (default skip=0, limit=20; max limit=100)
+  curl "http://127.0.0.1:8000/api/notes?skip=10&limit=10"
+  ```
+
+### 2. Evidence Attachments (`/api/notes/{note_id}/attachments`)
+
+- **Upload Image Evidence (JPEG, PNG, WebP up to 5 MB)**:
+  ```bash
+  curl -X POST http://127.0.0.1:8000/api/notes/{note_id}/attachments \
+    -F "file=@specimen.jpg;type=image/jpeg" \
+    -F "caption=Specimen Macro Photo" \
+    -F "description=Close-up of rock layer crystal structure"
+  ```
+
+- **List Attachments for a Note**:
+  ```bash
+  curl http://127.0.0.1:8000/api/notes/{note_id}/attachments
+  ```
+
+- **Download / Stream Attachment Image**:
+  ```bash
+  curl -O http://127.0.0.1:8000/api/notes/{note_id}/attachments/{attachment_id}/download
+  ```
+
+---
+
+## Quickstart
 
 ### 1. Prerequisites
 - Python 3.10+
@@ -72,8 +135,14 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Variables
-Copy `.env.example` to `.env` and fill in your MongoDB Atlas connection details when proceeding to Milestone 1:
+Copy `.env.example` to `.env` and fill in your MongoDB Atlas connection details:
 ```bash
 cp .env.example .env
 ```
 *(Never commit `.env` containing actual credentials).*
+
+### 4. Running Tests
+```bash
+pytest -v
+```
+

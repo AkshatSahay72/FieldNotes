@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from gridfs import GridFS
 from pymongo import ReturnDocument
 from pymongo.database import Database
@@ -41,6 +41,65 @@ def note_doc_to_response(doc: dict) -> NoteResponse:
     )
 
 
+def parse_and_validate_tags(
+    tag: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+) -> Optional[List[str]]:
+    """Parse, split, normalize, and validate tag filter query parameters.
+    
+    Accepts repeated query params (e.g., ?tag=soil&tag=water) or comma-delimited strings (e.g., ?tag=soil,water).
+    Returns a deduplicated list of non-empty stripped tag strings, or None if no tags requested.
+    Raises HTTP 400 Bad Request if any provided tag is empty or whitespace-only.
+    """
+    raw_inputs = []
+    if tag is not None:
+        raw_inputs.extend(tag)
+    if tags is not None:
+        raw_inputs.extend(tags)
+
+    if not raw_inputs:
+        return None
+
+    cleaned_tags = []
+    for item in raw_inputs:
+        parts = item.split(",")
+        for part in parts:
+            stripped = part.strip()
+            if not stripped:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Tag filter value cannot be empty",
+                )
+            if stripped not in cleaned_tags:
+                cleaned_tags.append(stripped)
+
+    return cleaned_tags if cleaned_tags else None
+
+
+def build_notes_query(
+    tag_list: Optional[List[str]] = None,
+    q: Optional[str] = None,
+) -> dict:
+    """Build a composable MongoDB query filter for tags and full-text search.
+    
+    - Tag filtering uses OR semantics: matches notes where 'tags' contains ANY of the given tags ($in).
+    - Text search uses native MongoDB $text operator ($search).
+    - If both are present, MongoDB applies implicit AND across the top-level keys.
+    """
+    query: dict = {}
+    if tag_list:
+        query["tags"] = {"$in": tag_list}
+    if q is not None:
+        trimmed_q = q.strip()
+        if not trimmed_q:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Search query 'q' cannot be empty",
+            )
+        query["$text"] = {"$search": trimmed_q}
+    return query
+
+
 @router.post(
     "",
     response_model=NoteResponse,
@@ -76,14 +135,49 @@ def create_note(
 @router.get(
     "",
     response_model=List[NoteResponse],
-    summary="List all research notes (newest first)",
+    summary="List, search, and filter research notes",
 )
 def list_notes(
+    tag: Optional[List[str]] = Query(
+        None,
+        description="Filter by tag (OR semantics). Can be repeated (?tag=soil&tag=water) or comma-separated (?tag=soil,water).",
+    ),
+    tags: Optional[List[str]] = Query(
+        None,
+        description="Alias for tag filter parameter.",
+    ),
+    q: Optional[str] = Query(
+        None,
+        description="Text search query across note title and content using MongoDB full-text search.",
+    ),
+    skip: int = Query(
+        0,
+        ge=0,
+        description="Number of notes to skip (offset, default: 0). Must be >= 0.",
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="Maximum number of notes to return (default: 20, max: 100).",
+    ),
     db: Database = Depends(get_database),
 ) -> List[NoteResponse]:
-    """Retrieve all research notes, sorted newest first by created_at."""
+    """Retrieve research notes with optional tag filtering, full-text search, and pagination.
+    
+    Notes are returned in stable descending order: newest first by created_at, with _id as tie-breaker.
+    """
+    cleaned_tags = parse_and_validate_tags(tag=tag, tags=tags)
+    filter_query = build_notes_query(tag_list=cleaned_tags, q=q)
+
     try:
-        cursor = db["notes"].find().sort("created_at", -1)
+        cursor = (
+            db["notes"]
+            .find(filter_query)
+            .sort([("created_at", -1), ("_id", -1)])
+            .skip(skip)
+            .limit(limit)
+        )
         return [note_doc_to_response(doc) for doc in cursor]
     except PyMongoError as err:
         logger.error("Failed to query notes: %s", type(err).__name__)

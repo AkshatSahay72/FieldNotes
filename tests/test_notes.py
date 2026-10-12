@@ -11,14 +11,28 @@ from app.config import Settings, get_settings
 
 
 class FakeCursor:
-    """In-memory cursor simulating PyMongo find cursor with sort."""
+    """In-memory cursor simulating PyMongo find cursor with sort, skip, and limit."""
 
     def __init__(self, docs):
         self._docs = [deepcopy(d) for d in docs]
 
-    def sort(self, key, direction=-1):
-        reverse = direction == -1
-        self._docs.sort(key=lambda d: d.get(key), reverse=reverse)
+    def sort(self, key_or_list, direction=-1):
+        if isinstance(key_or_list, list):
+            # Apply sorts in reverse order to achieve stable multi-key sort
+            for key, dir_val in reversed(key_or_list):
+                reverse = dir_val == -1
+                self._docs.sort(key=lambda d: d.get(key), reverse=reverse)
+        else:
+            reverse = direction == -1
+            self._docs.sort(key=lambda d: d.get(key_or_list), reverse=reverse)
+        return self
+
+    def skip(self, count):
+        self._docs = self._docs[count:]
+        return self
+
+    def limit(self, count):
+        self._docs = self._docs[:count]
         return self
 
     def __iter__(self):
@@ -43,7 +57,28 @@ class FakeCollection:
         return InsertResult()
 
     def find(self, filter_dict=None):
-        return FakeCursor(self.docs.values())
+        docs = list(self.docs.values())
+        if filter_dict:
+            filtered = []
+            for doc in docs:
+                match = True
+                # Handle tags filter: {"tags": {"$in": tag_list}}
+                if "tags" in filter_dict:
+                    in_tags = filter_dict["tags"].get("$in", [])
+                    doc_tags = doc.get("tags", [])
+                    if not any(t in doc_tags for t in in_tags):
+                        match = False
+                # Handle $text search: {"$text": {"$search": search_term}}
+                if "$text" in filter_dict:
+                    search_term = filter_dict["$text"].get("$search", "").lower()
+                    title = doc.get("title", "").lower()
+                    content = doc.get("content", "").lower()
+                    if search_term not in title and search_term not in content:
+                        match = False
+                if match:
+                    filtered.append(doc)
+            return FakeCursor(filtered)
+        return FakeCursor(docs)
 
     def find_one(self, filter_dict):
         oid = filter_dict.get("_id")
@@ -196,6 +231,229 @@ def test_list_notes_ordered_newest_first(client, fake_db):
     assert notes[0]["title"] == "Newest"
     assert notes[1]["title"] == "Middle"
     assert notes[2]["title"] == "Oldest"
+
+
+# ==============================================================================
+# Milestone 4: Tag Filtering, Text Search & Pagination
+# ==============================================================================
+
+def test_list_notes_filter_single_tag(client, fake_db):
+    """Verify filtering by a single tag returns only matching notes."""
+    fake_db["notes"].insert_one({"title": "Note A", "content": "c1", "tags": ["soil", "moisture"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Note B", "content": "c2", "tags": ["canopy"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?tag=soil")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Note A"
+
+
+def test_list_notes_filter_multiple_tags_or_semantics(client, fake_db):
+    """Verify multiple tags use OR semantics (match notes with any tag)."""
+    fake_db["notes"].insert_one({"title": "Note Soil", "content": "c1", "tags": ["soil"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Note Water", "content": "c2", "tags": ["water"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Note Flora", "content": "c3", "tags": ["flora"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?tag=soil&tag=water")
+    assert res.status_code == 200
+    data = res.json()
+    titles = [n["title"] for n in data]
+    assert len(data) == 2
+    assert "Note Soil" in titles
+    assert "Note Water" in titles
+    assert "Note Flora" not in titles
+
+
+def test_list_notes_filter_comma_separated_and_alias(client, fake_db):
+    """Verify comma-separated tags and ?tags= alias work identically."""
+    fake_db["notes"].insert_one({"title": "Note 1", "content": "c1", "tags": ["sensor"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Note 2", "content": "c2", "tags": ["drone"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    # Comma-separated ?tag=sensor,drone
+    res = client.get("/api/notes?tag=sensor,drone")
+    assert res.status_code == 200
+    assert len(res.json()) == 2
+
+    # Using ?tags= alias
+    res_alias = client.get("/api/notes?tags=drone")
+    assert res_alias.status_code == 200
+    assert len(res_alias.json()) == 1
+    assert res_alias.json()[0]["title"] == "Note 2"
+
+
+def test_list_notes_empty_or_whitespace_tag_rejected(client):
+    """Verify empty or whitespace-only tag query parameters are rejected with 400 Bad Request."""
+    res_empty = client.get("/api/notes?tag=")
+    assert res_empty.status_code == 400
+    assert "Tag filter value cannot be empty" in res_empty.json()["detail"]
+
+    res_ws = client.get("/api/notes?tag=   ")
+    assert res_ws.status_code == 400
+    assert "Tag filter value cannot be empty" in res_ws.json()["detail"]
+
+
+def test_list_notes_text_search_matching_title(client, fake_db):
+    """Verify text search matches words in title."""
+    fake_db["notes"].insert_one({"title": "Geological Survey Plot 3", "content": "Basalt samples gathered.", "tags": [], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Hydrological Monitor", "content": "River stream metrics.", "tags": [], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?q=Geological")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Geological Survey Plot 3"
+
+
+def test_list_notes_text_search_matching_content(client, fake_db):
+    """Verify text search matches keywords in body content."""
+    fake_db["notes"].insert_one({"title": "Plot Analysis", "content": "Volumetric nitrogen concentration high.", "tags": [], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    fake_db["notes"].insert_one({"title": "Weather Log", "content": "Cloudy afternoon.", "tags": [], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?q=nitrogen")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Plot Analysis"
+
+
+def test_list_notes_text_search_no_matches(client, fake_db):
+    """Verify text search returns empty list when query does not match any note."""
+    fake_db["notes"].insert_one({"title": "Forestry", "content": "Pine trees.", "tags": [], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?q=desert")
+    assert res.status_code == 200
+    assert res.json() == []
+
+
+def test_list_notes_empty_or_whitespace_search_rejected(client):
+    """Verify empty or whitespace-only search string 'q' is rejected with 400 Bad Request."""
+    res_empty = client.get("/api/notes?q=")
+    assert res_empty.status_code == 400
+    assert "Search query 'q' cannot be empty" in res_empty.json()["detail"]
+
+    res_ws = client.get("/api/notes?q=    ")
+    assert res_ws.status_code == 400
+    assert "Search query 'q' cannot be empty" in res_ws.json()["detail"]
+
+
+def test_list_notes_search_combined_with_tag_filter(client, fake_db):
+    """Verify composing tag filter and text search in a single query (implicit AND)."""
+    # Note matches tag AND keyword
+    fake_db["notes"].insert_one({"title": "Irrigation Sensor Log", "content": "Flow rate 12 L/min.", "tags": ["hydrology"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    # Note matches tag only
+    fake_db["notes"].insert_one({"title": "Dam Inspection", "content": "Concrete integrity.", "tags": ["hydrology"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+    # Note matches keyword only
+    fake_db["notes"].insert_one({"title": "Lab Calibration", "content": "Sensor test bench.", "tags": ["lab"], "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)})
+
+    res = client.get("/api/notes?tag=hydrology&q=Sensor")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 1
+    assert data[0]["title"] == "Irrigation Sensor Log"
+
+
+def test_list_notes_default_pagination(client, fake_db):
+    """Verify default pagination returns up to 20 notes."""
+    base_time = datetime.now(timezone.utc)
+    for i in range(25):
+        fake_db["notes"].insert_one({
+            "title": f"Note #{i:02d}",
+            "content": f"Content {i}",
+            "tags": [],
+            "created_at": base_time + timedelta(minutes=i),
+            "updated_at": base_time + timedelta(minutes=i),
+        })
+
+    res = client.get("/api/notes")
+    assert res.status_code == 200
+    data = res.json()
+    # Default limit is 20
+    assert len(data) == 20
+    # Newest note (Note #24) first
+    assert data[0]["title"] == "Note #24"
+
+
+def test_list_notes_custom_skip_and_limit(client, fake_db):
+    """Verify custom skip and limit slices the sorted notes correctly."""
+    base_time = datetime.now(timezone.utc)
+    for i in range(10):
+        fake_db["notes"].insert_one({
+            "title": f"Item {i}",
+            "content": "test",
+            "tags": [],
+            "created_at": base_time + timedelta(minutes=i),
+            "updated_at": base_time + timedelta(minutes=i),
+        })
+
+    # Total 10 notes: Item 9 (newest) down to Item 0 (oldest)
+    # ?skip=2&limit=3 should return items at index 2, 3, 4 -> Item 7, Item 6, Item 5
+    res = client.get("/api/notes?skip=2&limit=3")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 3
+    assert data[0]["title"] == "Item 7"
+    assert data[1]["title"] == "Item 6"
+    assert data[2]["title"] == "Item 5"
+
+
+def test_list_notes_pagination_validation_errors(client):
+    """Verify invalid or out-of-range pagination values return 422 Unprocessable Entity."""
+    # Negative skip
+    assert client.get("/api/notes?skip=-1").status_code == 422
+
+    # Zero limit
+    assert client.get("/api/notes?limit=0").status_code == 422
+
+    # Negative limit
+    assert client.get("/api/notes?limit=-5").status_code == 422
+
+    # Limit exceeding maximum (100)
+    assert client.get("/api/notes?limit=101").status_code == 422
+
+
+def test_list_notes_stable_sort_timestamp_tie_breaker(client, fake_db):
+    """Verify stable sorting uses _id as a deterministic tie-breaker when created_at timestamps are identical."""
+    same_time = datetime.now(timezone.utc)
+    # Insert 3 notes with exact same created_at but increasing ObjectIds
+    oid1 = ObjectId("507f1f77bcf86cd799439011")
+    oid2 = ObjectId("507f1f77bcf86cd799439012")
+    oid3 = ObjectId("507f1f77bcf86cd799439013")
+
+    fake_db["notes"].insert_one({"_id": oid1, "title": "Tie 1", "content": "c", "tags": [], "created_at": same_time, "updated_at": same_time})
+    fake_db["notes"].insert_one({"_id": oid2, "title": "Tie 2", "content": "c", "tags": [], "created_at": same_time, "updated_at": same_time})
+    fake_db["notes"].insert_one({"_id": oid3, "title": "Tie 3", "content": "c", "tags": [], "created_at": same_time, "updated_at": same_time})
+
+    res = client.get("/api/notes")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data) == 3
+    # With [("created_at", -1), ("_id", -1)], higher _id comes first
+    assert data[0]["id"] == str(oid3)
+    assert data[1]["id"] == str(oid2)
+    assert data[2]["id"] == str(oid1)
+
+
+def test_build_notes_query_unit():
+    """Unit test for query construction helper functions."""
+    from app.routes.notes import build_notes_query, parse_and_validate_tags
+
+    # Tag parsing & normalization
+    assert parse_and_validate_tags(None, None) is None
+    assert parse_and_validate_tags(["soil", "water"]) == ["soil", "water"]
+    assert parse_and_validate_tags(["soil,water", "sensor"]) == ["soil", "water", "sensor"]
+    assert parse_and_validate_tags([" soil ", "water "]) == ["soil", "water"]
+
+    # Query composition
+    assert build_notes_query() == {}
+    assert build_notes_query(tag_list=["soil"]) == {"tags": {"$in": ["soil"]}}
+    assert build_notes_query(tag_list=["soil", "water"]) == {"tags": {"$in": ["soil", "water"]}}
+    assert build_notes_query(q="moisture") == {"$text": {"$search": "moisture"}}
+    assert build_notes_query(tag_list=["soil"], q="moisture") == {
+        "tags": {"$in": ["soil"]},
+        "$text": {"$search": "moisture"},
+    }
+
 
 
 # ==============================================================================

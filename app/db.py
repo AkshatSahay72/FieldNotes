@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from fastapi import Request, HTTPException, status, Depends
-from pymongo import MongoClient, DESCENDING, ASCENDING
+from pymongo import MongoClient, DESCENDING, ASCENDING, TEXT
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 import gridfs
@@ -62,6 +62,10 @@ def init_db_indexes(db: Optional[Database]) -> None:
       notes ordered by newest first (created_at DESC). Creating a B-tree index
       on this field avoids memory-intensive in-memory sort stages and ensures
       efficient index-covered scans as notes volume scales.
+    - notes.tags (ASCENDING): Multikey B-tree index enabling efficient filtering
+      by note tags (e.g., {"tags": {"$in": [...]}}) without full collection scans.
+    - notes (title: text, content: text): Compound text index supporting native
+      MongoDB full-text search ($text / $search) across note titles and content.
     - attachments.note_id (ASCENDING): All attachment operations (listing,
       lookup, and cascading deletion) query by parent note_id. Indexing note_id
       ensures fast lookups without full-collection scans.
@@ -72,6 +76,14 @@ def init_db_indexes(db: Optional[Database]) -> None:
         db["notes"].create_index(
             [("created_at", DESCENDING)],
             name="idx_notes_created_at_desc",
+        )
+        db["notes"].create_index(
+            [("tags", ASCENDING)],
+            name="idx_notes_tags",
+        )
+        db["notes"].create_index(
+            [("title", TEXT), ("content", TEXT)],
+            name="idx_notes_text",
         )
         db["attachments"].create_index(
             [("note_id", ASCENDING)],

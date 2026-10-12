@@ -57,7 +57,7 @@ def test_close_mongo_client_safely_handles_client_and_none():
 
 
 def test_init_db_indexes():
-    """Verify init_db_indexes creates indexes on notes and attachments."""
+    """Verify init_db_indexes creates created_at, tags, text, and attachment indexes."""
     from app.db import init_db_indexes
 
     mock_notes = MagicMock()
@@ -65,10 +65,12 @@ def test_init_db_indexes():
     mock_db = {"notes": mock_notes, "attachments": mock_attachments}
 
     init_db_indexes(mock_db)
-    mock_notes.create_index.assert_called_once_with(
-        [("created_at", -1)],
-        name="idx_notes_created_at_desc",
-    )
+    assert mock_notes.create_index.call_count == 3
+    notes_calls = mock_notes.create_index.call_args_list
+    assert notes_calls[0] == (([("created_at", -1)],), {"name": "idx_notes_created_at_desc"})
+    assert notes_calls[1] == (([("tags", 1)],), {"name": "idx_notes_tags"})
+    assert notes_calls[2] == (([("title", "text"), ("content", "text")],), {"name": "idx_notes_text"})
+
     mock_attachments.create_index.assert_called_once_with(
         [("note_id", 1)],
         name="idx_attachments_note_id",
@@ -76,4 +78,5 @@ def test_init_db_indexes():
 
     # Should handle None gracefully
     init_db_indexes(None)
+
 

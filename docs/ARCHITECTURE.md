@@ -39,14 +39,15 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 
 ## 2. Distinction: Planned Design vs. Implemented Behavior
 
-| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 3B) |
+| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 4) |
 | :--- | :--- | :--- |
 | **API Framework (FastAPI)** | Modular routers (`/api/health`, `/api/notes`, `/api/analytics`, `/api/search`) | **IMPLEMENTED** (`/health`, `/api/health`, `/api/notes`, `/api/notes/{note_id}/attachments`) |
 | **Database Driver (PyMongo)** | Singleton/lifespan-managed `MongoClient` with connection pooling | **IMPLEMENTED** (lifespan management, ping checks, `get_database`, `get_gridfs` dependencies) |
 | **Database (MongoDB Atlas)** | Remote Atlas Cluster storing `notes`, `attachments`, and GridFS buckets | **IMPLEMENTED** (`notes`, `attachments`, `fs.files`, `fs.chunks`) |
 | **Configuration** | Pydantic Settings reading environment variables | **IMPLEMENTED** (`pydantic-settings` reading `.env` with validation) |
 | **Collections & Schemas** | Document validation rules on `notes` and `attachments` | **IMPLEMENTED** (Pydantic schemas + PyMongo BSON serialization) |
-| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **IMPLEMENTED** (`idx_notes_created_at_desc` on `notes`, `idx_attachments_note_id` on `attachments`) |
+| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **IMPLEMENTED** (`idx_notes_created_at_desc`, `idx_notes_tags`, `idx_notes_text` on `notes`; `idx_attachments_note_id` on `attachments`) |
+| **Querying & Text Search** | Tag filtering (`$in`), native text search (`$text`), pagination, deterministic sort | **IMPLEMENTED** (`GET /api/notes` with `tag`, `tags`, `q`, `skip`, `limit`, and `_id` tie-breaker) |
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
 | **Aggregation Pipelines** | Multi-stage analytical queries | **NOT IMPLEMENTED** (Milestone 5) |
 | **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6) |
@@ -135,7 +136,8 @@ FastAPI provides an exception handler hierarchy:
    - Non-existent `ObjectId` or missing document queries mapped to `404 Not Found`.
    - Malformed `ObjectId` hex strings caught at input validation and mapped to `400 Bad Request`.
 3. **Data Validation Errors**:
-   - Pydantic validation errors caught by FastAPI and converted to uniform `422 Unprocessable Entity` JSON responses.
+   - Pydantic validation errors caught by FastAPI and converted to uniform `422 Unprocessable Entity` JSON responses (e.g., negative pagination `skip`, `limit <= 0`, or `limit > 100`).
+   - Query validation errors (e.g., empty search query `?q=` or blank tag filter `?tag=`) mapped to deliberate `400 Bad Request`.
 4. **Payload & Format Errors**:
    - Oversized uploads return HTTP `413 Content Too Large`.
    - Disallowed or spoofed file types return HTTP `415 Unsupported Media Type`.
@@ -146,9 +148,37 @@ FastAPI provides an exception handler hierarchy:
 ## 6. Indexing & Query Strategy
 
 To ensure queries remain efficient and demonstrate database fundamentals during academic evaluation:
-1. **`notes.created_at` (DESCENDING)**: Single-field descending index (`idx_notes_created_at_desc`) supports `GET /api/notes` ordering newest first without in-memory sort stages.
-2. **`attachments.note_id` (ASCENDING)**: Single-field index (`idx_attachments_note_id`) supports fast attachment listing (`GET /api/notes/{note_id}/attachments`) and cascading cleanup lookups without full-collection scans.
-3. **Multikey index on `notes.tags`** (Planned): Tag-based filtering for Milestone 4.
-4. **Text index on `title` and `content`** (Planned): MongoDB native full-text search with relevance scoring for Milestone 4.
+
+### 6.1 Configured Indexes
+1. **`notes.created_at` (DESCENDING)**: Single-field descending index (`idx_notes_created_at_desc`) supports default `GET /api/notes` ordering newest first without in-memory sort stages.
+2. **`notes.tags` (ASCENDING / MULTIKEY)**: Multikey B-tree index (`idx_notes_tags`, `[("tags", 1)]`) indexes individual string elements of the `tags` array, accelerating tag filtering queries using `$in`.
+3. **`notes` Text Index (`title: "text"`, `content: "text"`)**: Compound native text index (`idx_notes_text`) enables keyword searches across both the note title and body via `$text: {"$search": q}`.
+4. **`attachments.note_id` (ASCENDING)**: Single-field index (`idx_attachments_note_id`, `[("note_id", 1)]`) supports fast attachment listing (`GET /api/notes/{note_id}/attachments`) and cascading cleanup lookups without full-collection scans.
 5. **Vector Index (Atlas)** (Planned): Configured on `embedding` field with cosine similarity for Milestone 6.
+
+### 6.2 Query Composition & Semantics
+- **Tag Filtering Semantics**: Tag queries accept one or multiple tags (`?tag=soil&tag=water` or comma-separated `?tags=soil,water`). Multiple requested tags use **OR semantics** via MongoDB's `$in` operator:
+  ```json
+  {"tags": {"$in": ["soil", "water"]}}
+  ```
+  A note matches if its `tags` array contains at least one of the queried tags. Blank or whitespace-only tag parameters return HTTP `400 Bad Request`.
+- **Query Composition**: When both text search and tag filters are supplied, they are composed in a single MongoDB query document with implicit AND semantics:
+  ```json
+  {
+    "tags": {"$in": ["soil", "water"]},
+    "$text": {"$search": "nitrogen"}
+  }
+  ```
+- **Pagination**: Supports `skip` (default 0, `ge=0`) and `limit` (default 20, `ge=1`, `le=100`), enforced at request validation (`422 Unprocessable Entity` on invalid bounds). Responses maintain the existing list response format (`List[NoteResponse]`) without altering the contract.
+- **Deterministic Sort Tie-Breaker**: To ensure pagination stability when multiple notes share identical `created_at` timestamps, queries use a deterministic compound sort:
+  ```python
+  cursor.sort([("created_at", -1), ("_id", -1)])
+  ```
+  Since `_id` values are monotonically generated and unique `ObjectId`s, this tie-breaker prevents page drift or skipped notes across pagination boundaries.
+
+### 6.3 MongoDB Text Search Limitations (Academic & Viva Focus)
+1. **Single Text Index per Collection**: MongoDB allows at most **one** text index per collection. Adding a second text index throws an error.
+2. **Text Index & Sort Key Restrictions**: Unlike standard B-tree compound indexes, MongoDB text indexes cannot have trailing sort keys. When querying with `$text` and sorting by `[("created_at", -1), ("_id", -1)]`, MongoDB uses `idx_notes_text` to select matching documents and then executes an **in-memory sort stage** (`SORT`). For high-throughput chronological searches on massive datasets, text relevance score (`metaTextScore`) or specialized search engines (Atlas Search) would be evaluated.
+3. **No Fuzzy or Typo-Tolerant Matching**: Native MongoDB `$text` search relies on word tokenization, stemming (e.g. "runs" -> "run"), and stop-word removal for supported languages (default: English). It does **not** support fuzzy Levenshtein distance, partial substring regex matching, or typo tolerance.
+4. **No Semantic or Vector Understanding**: Native `$text` performs exact lexical/stemmed matching. It does not understand synonyms, context, or embeddings. Semantic retrieval is reserved for Milestone 6 using MongoDB Atlas Vector Search.
 

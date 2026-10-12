@@ -8,8 +8,8 @@
 | **Milestone 1** | MongoDB Connection & Health Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 2** | Research Notes Data Model & CRUD Operations | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 3** | Image Attachments with PyMongo GridFS | **COMPLETED & FULLY TESTED** |
-| **Milestone 4** | Indexing & Efficient Querying | **NOT IMPLEMENTED** (Next Milestone) |
-| **Milestone 5** | Analytics & Aggregation Pipelines | **NOT IMPLEMENTED** |
+| **Milestone 4** | Indexing & Efficient Querying | **COMPLETED & FULLY VERIFIED** |
+| **Milestone 5** | Analytics & Aggregation Pipelines | **NOT IMPLEMENTED** (Next Milestone) |
 | **Milestone 6** | Semantic Note Retrieval (Atlas Vector Search) | **NOT IMPLEMENTED** |
 | **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
 
@@ -137,10 +137,48 @@
 
 ---
 
+## Milestone 4 Log: MongoDB Querying, Tag Filtering, and Native Text Search
+
+- **Date**: 2026-10-13
+- **Objective**: Implement tag filtering (single & multiple tags with OR semantics), native MongoDB text search across title and content (`$text`), pagination (`skip` & `limit`), deterministic sorting with `_id` tie-breaker, and text/multikey index creation on the `notes` collection.
+- **Verification Status**:
+  - **Automated Test Suite**: 69 tests executed and passing (100% pass rate) with zero failures and zero warnings.
+  - **Isolated Unit / Integration Coverage**: 14 new tests added in `tests/test_notes.py` and `tests/test_db.py` verifying unfiltered listing, single tag filtering, multiple tags with OR semantics (`$in`), query parameter aliasing (`tag` and `tags`), empty tag validation error (400), empty search query validation error (400), title search, content search, no-match search, combined tag + text search, default pagination (skip=0, limit=20), custom skip and limit, out-of-range pagination validation (422), deterministic sorting tie-breaker on identical timestamps, query builder correctness, and index initialization.
+  - **Live MongoDB Atlas Smoke Verification**: Executed live integration check against MongoDB Atlas cluster (`fieldnote-cluster.maysnkd.mongodb.net`) using disposable test records (`scratch/smoke_test_atlas_queries.py`). Confirmed index presence (`idx_notes_tags`, `idx_notes_text`), tag filtering matching `$in`, native text search matching `$text`, combined text + tag query, deterministic tie-breaking, and complete teardown of disposable documents without touching real data.
+
+### Files Created or Modified:
+1. `app/db.py` *(Modified)*:
+   - Added PyMongo `TEXT` import.
+   - Updated `init_db_indexes(db)` to create multikey index `idx_notes_tags` (`[("tags", ASCENDING)]`) and text index `idx_notes_text` (`[("title", TEXT), ("content", TEXT)]`) alongside existing indexes.
+2. `app/routes/notes.py` *(Modified)*:
+   - Added `parse_and_validate_tags(tag, tags)` helper supporting repeatable `?tag=...` and comma-separated `?tags=...`, stripping whitespace and rejecting empty or whitespace-only tags with HTTP `400 Bad Request`.
+   - Added `build_notes_query(tags, q)` helper composing tag filtering (`{"tags": {"$in": tags}}`) and native text search (`{"$text": {"$search": q}}`) into a unified MongoDB query filter dict.
+   - Updated `GET /api/notes` route handler with query parameters `tag: List[str]`, `tags: Optional[str]`, `q: Optional[str]`, `skip: int = Query(default=0, ge=0)`, and `limit: int = Query(default=20, ge=1, le=100)`.
+   - Updated cursor sorting to deterministic compound sort `cursor.sort([("created_at", -1), ("_id", -1)])` to guarantee stable pagination across timestamp ties.
+3. `tests/test_db.py` *(Modified)*:
+   - Updated `test_init_db_indexes` to verify that `idx_notes_created_at_desc`, `idx_notes_tags`, and `idx_notes_text` are initialized on `notes`, and `idx_attachments_note_id` on `attachments`.
+4. `tests/test_notes.py` *(Modified)*:
+   - Upgraded `FakeCursor` test double to support multi-attribute compound sorting and chained `.skip()` / `.limit()` slicing.
+   - Upgraded `FakeCollection.find()` to evaluate MongoDB query filters including `{"tags": {"$in": ...}}` and `{"$text": {"$search": ...}}`.
+   - Added 14 unit and integration tests thoroughly testing query composition, edge cases, error conditions, and pagination.
+5. `docs/ARCHITECTURE.md` *(Modified)*:
+   - Updated component status table to Milestone 4.
+   - Added Section 6.1, 6.2, and 6.3 detailing configured indexes, query composition, tag OR semantics, pagination rules, deterministic sorting tie-breaker, and transparent documentation of MongoDB text search limitations.
+6. `README.md` *(Modified)*:
+   - Added concise API query parameter examples for listing, tag filtering, text searching, and pagination.
+
+### Key Architectural & Engineering Decisions Made:
+- **Tag Filtering Semantics (OR via `$in`)**: Filtering by multiple tags uses MongoDB's `$in` operator across the `tags` array field (`{"tags": {"$in": ["soil", "water"]}}`). OR semantics is standard and intuitive for exploratory research notes discovery.
+- **Multikey Index**: Added `idx_notes_tags` (`[("tags", 1)]`) on `notes`. Justification: Because `tags` is an array of strings, MongoDB automatically indexes each array element in a multikey index, allowing `$in` queries to perform index range scans rather than full collection scans.
+- **Native MongoDB Text Index & Search**: Added `idx_notes_text` (`[("title", "text"), ("content", "text")]`). Text queries use `$text: {"$search": q}`. We explicitly document that MongoDB native text search is lexical (word stemming and stop words), allows only one text index per collection, requires an in-memory sort when combined with date ordering, and does not provide fuzzy or vector similarity.
+- **Deterministic Sort Tie-Breaker**: To prevent pagination drift when multiple notes share the exact same microsecond timestamp, queries sort on `[("created_at", -1), ("_id", -1)]`. `ObjectId`s are strictly ordered by creation timestamp and machine counter, guaranteeing consistent pagination boundaries.
+- **Strict Boundary Validation**: Pagination parameters enforce `skip >= 0` and `1 <= limit <= 100` via FastAPI/Pydantic `Query` bounds (HTTP `422 Unprocessable Entity`). Empty search strings (`q=""`) or blank tags (`tag=""`) return HTTP `400 Bad Request` to catch client errors early.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] MongoDB text search indexes and query explainability (Milestone 4).
 - [NOT IMPLEMENTED] MongoDB aggregation pipelines for analytics (`/analytics`, Milestone 5).
 - [NOT IMPLEMENTED] Vector embeddings generation and Atlas Vector Search queries (`/search`, Milestone 6).
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
@@ -151,7 +189,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 4**: Indexing & Efficient Querying
-  - Focus: Compound indexes, text search indexes on notes, query explainability, and index usage validation.
+- **Milestone 5**: Analytics & Aggregation Pipelines
+  - Focus: Multi-stage MongoDB aggregation pipelines for research tag frequency, activity timelines, and summary metrics (`/api/analytics`).
   - Required before starting: Explicit user approval to proceed.
 
