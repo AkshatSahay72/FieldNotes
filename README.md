@@ -39,8 +39,8 @@ The project is built incrementally in strict, reviewable milestones:
 - **Milestone 2**: Research Notes Data Model & CRUD Operations *(Completed)*
 - **Milestone 3**: Image Attachments & Evidence Metadata with GridFS *(Completed)*
 - **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
-- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Next Milestone)*
-- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Future)*
+- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Completed)*
+- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Next Milestone)*
 - **Milestone 7**: Minimal Frontend & Deployment Preparation *(Future)*
 
 Documentation files in `docs/` serve as the source of truth:
@@ -109,6 +109,35 @@ Documentation files in `docs/` serve as the source of truth:
 - **Download / Stream Attachment Image**:
   ```bash
   curl -O http://127.0.0.1:8000/api/notes/{note_id}/attachments/{attachment_id}/download
+  ```
+
+### 3. Aggregation Analytics (`/api/analytics`)
+
+- **Research Overview Summary**:
+  ```bash
+  curl http://127.0.0.1:8000/api/analytics/overview
+  ```
+  *Response:* `{"total_notes": 12, "total_attachments": 4, "notes_with_tags": 10}`
+
+- **Tag Frequency Distribution (`$unwind` + `$group`)**:
+  ```bash
+  curl http://127.0.0.1:8000/api/analytics/tags
+  ```
+  *Response:* `[{"tag": "soil", "count": 6}, {"tag": "nitrogen", "count": 4}]`
+
+- **Daily Note Creation Trends (`$dateToString` in UTC)**:
+  ```bash
+  curl http://127.0.0.1:8000/api/analytics/activity
+  ```
+  *Response:* `[{"date": "2026-10-12", "count": 3}, {"date": "2026-10-13", "count": 9}]`
+
+- **Per-Note Attachment Counts (`$lookup` + `$size`)**:
+  ```bash
+  # Includes notes with 0 attachments by default:
+  curl http://127.0.0.1:8000/api/analytics/attachments
+
+  # Or filter to only notes having attachments:
+  curl "http://127.0.0.1:8000/api/analytics/attachments?include_zero=false"
   ```
 
 ---

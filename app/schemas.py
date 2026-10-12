@@ -140,3 +140,73 @@ class AttachmentResponse(BaseModel):
         ...,
         description="UTC creation timestamp",
     )
+
+
+class AnalyticsOverview(BaseModel):
+    """Schema for high-level research notes and attachments overview."""
+
+    total_notes: int = Field(
+        ...,
+        description="Total number of research notes",
+        examples=[42],
+    )
+    total_attachments: int = Field(
+        ...,
+        description="Total number of attachment metadata records",
+        examples=[15],
+    )
+    notes_with_tags: int = Field(
+        ...,
+        description="Number of notes containing at least one tag",
+        examples=[38],
+    )
+
+
+class TagCount(BaseModel):
+    """Schema for frequency distribution of a single research tag."""
+
+    tag: str = Field(
+        ...,
+        description="Categorical tag name",
+        examples=["soil"],
+    )
+    count: int = Field(
+        ...,
+        description="Number of research notes containing this tag",
+        examples=[12],
+    )
+
+
+class DailyActivity(BaseModel):
+    """Schema for chronological note creation frequency per calendar day."""
+
+    date: str = Field(
+        ...,
+        description="UTC date formatted as YYYY-MM-DD",
+        examples=["2026-10-13"],
+    )
+    count: int = Field(
+        ...,
+        description="Number of research notes created on this date",
+        examples=[5],
+    )
+
+
+class NoteAttachmentSummary(BaseModel):
+    """Schema for attachment counts linked to a research note."""
+
+    note_id: str = Field(
+        ...,
+        description="Unique 24-character hex ID of the parent research note",
+        examples=["507f1f77bcf86cd799439011"],
+    )
+    title: str = Field(
+        ...,
+        description="Title of the research note",
+        examples=["Soil Sample Plot 4B"],
+    )
+    attachment_count: int = Field(
+        ...,
+        description="Number of image attachments linked to this note",
+        examples=[2],
+    )

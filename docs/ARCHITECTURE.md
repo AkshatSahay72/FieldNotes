@@ -39,17 +39,17 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 
 ## 2. Distinction: Planned Design vs. Implemented Behavior
 
-| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 4) |
+| Component / Layer | Planned Design Status | Implemented Behavior Status (Milestone 5) |
 | :--- | :--- | :--- |
-| **API Framework (FastAPI)** | Modular routers (`/api/health`, `/api/notes`, `/api/analytics`, `/api/search`) | **IMPLEMENTED** (`/health`, `/api/health`, `/api/notes`, `/api/notes/{note_id}/attachments`) |
+| **API Framework (FastAPI)** | Modular routers (`/api/health`, `/api/notes`, `/api/analytics`, `/api/search`) | **IMPLEMENTED** (`/health`, `/api/health`, `/api/notes`, `/api/notes/{note_id}/attachments`, `/api/analytics`) |
 | **Database Driver (PyMongo)** | Singleton/lifespan-managed `MongoClient` with connection pooling | **IMPLEMENTED** (lifespan management, ping checks, `get_database`, `get_gridfs` dependencies) |
 | **Database (MongoDB Atlas)** | Remote Atlas Cluster storing `notes`, `attachments`, and GridFS buckets | **IMPLEMENTED** (`notes`, `attachments`, `fs.files`, `fs.chunks`) |
 | **Configuration** | Pydantic Settings reading environment variables | **IMPLEMENTED** (`pydantic-settings` reading `.env` with validation) |
 | **Collections & Schemas** | Document validation rules on `notes` and `attachments` | **IMPLEMENTED** (Pydantic schemas + PyMongo BSON serialization) |
-| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **IMPLEMENTED** (`idx_notes_created_at_desc`, `idx_notes_tags`, `idx_notes_text` on `notes`; `idx_attachments_note_id` on `attachments`) |
+| **Index Management** | Compound, unique, and text indexes configured via PyMongo | **IMPLEMENTED** (`idx_notes_created_at_desc`, `idx_notes_created_at_id_desc`, `idx_notes_tags`, `idx_notes_text` on `notes`; `idx_attachments_note_id` on `attachments`) |
 | **Querying & Text Search** | Tag filtering (`$in`), native text search (`$text`), pagination, deterministic sort | **IMPLEMENTED** (`GET /api/notes` with `tag`, `tags`, `q`, `skip`, `limit`, and `_id` tie-breaker) |
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
-| **Aggregation Pipelines** | Multi-stage analytical queries | **NOT IMPLEMENTED** (Milestone 5) |
+| **Aggregation Pipelines** | Multi-stage analytical queries | **IMPLEMENTED** (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$lookup`, `$dateToString`) |
 | **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6) |
 
 ---
@@ -184,3 +184,88 @@ To ensure queries remain efficient and demonstrate database fundamentals during 
 4. **No Fuzzy or Typo-Tolerant Matching**: Native MongoDB `$text` search relies on word tokenization, stemming (e.g. "runs" -> "run"), and stop-word removal for supported languages (default: English). It does **not** support fuzzy Levenshtein distance, partial substring regex matching, or typo tolerance.
 5. **No Semantic or Vector Understanding**: Native `$text` performs exact lexical/stemmed matching. It does not understand synonyms, context, or embeddings. Semantic retrieval is reserved for Milestone 6 using MongoDB Atlas Vector Search.
 
+---
+
+## 7. MongoDB Aggregation Pipelines & Analytics Strategy
+
+Fieldnote provides analytics via dedicated read-only aggregation pipelines in `app/routes/analytics.py`. These endpoints demonstrate multi-stage document transformations, grouping, date formatting, and relational-style collection joins in an academic viva setting.
+
+### 7.1 Analytics Endpoints Summary
+- `GET /api/analytics/overview`: Fast high-level counts across notes and attachments.
+- `GET /api/analytics/tags`: Tag frequency distribution via `$unwind` and `$group`.
+- `GET /api/analytics/activity`: Daily note creation timeline via `$dateToString` and `$group`.
+- `GET /api/analytics/attachments`: Per-note attachment counts via `$lookup` and `$size`.
+
+### 7.2 Aggregation Pipeline Definitions & Semantics
+
+#### 1. Tag Frequency Distribution (`/api/analytics/tags`)
+```python
+[
+    {"$unwind": "$tags"},
+    {"$match": {"tags": {"$type": "string", "$regex": r"\S"}}},
+    {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+    {"$sort": {"count": -1, "_id": 1}},
+    {"$project": {"_id": 0, "tag": "$_id", "count": 1}},
+]
+```
+- **Semantics**:
+  - `$unwind` splits the `tags` array into separate stream documents. Empty arrays (`[]`) and missing fields are automatically omitted.
+  - `$match` strictly requires tags to be non-empty strings with at least one non-whitespace character (excluding nulls, empty strings, and whitespace-only strings), perfectly aligning with `notes_with_tags` in the overview endpoint.
+  - `$group` computes the frequency of each tag. Stored tags are case-sensitive as stored (e.g. `"Soil"` and `"soil"` are grouped separately; stored user data is not mutated).
+  - Deterministic sort orders by `count` descending, then tag name alphabetically ascending.
+  - Returns `[]` when no tagged notes exist.
+
+#### 2. Note Creation Over Time (`/api/analytics/activity`)
+```python
+[
+    {"$match": {"created_at": {"$type": "date"}}},
+    {
+        "$group": {
+            "_id": {
+                "$dateToString": {
+                    "format": "%Y-%m-%d",
+                    "date": "$created_at",
+                    "timezone": "UTC",
+                }
+            },
+            "count": {"$sum": 1},
+        }
+    },
+    {"$sort": {"_id": 1}},
+    {"$project": {"_id": 0, "date": "$_id", "count": 1}},
+]
+```
+- **Semantics**:
+  - `$dateToString` with `timezone: "UTC"` truncates BSON `created_at` datetimes to calendar dates (`YYYY-MM-DD`).
+  - Dates with zero notes created are not artificially fabricated.
+  - Deterministic sort orders chronologically ascending by calendar date.
+  - Returns `[]` when no notes exist.
+
+#### 3. Attachment Counts by Note (`/api/analytics/attachments`)
+```python
+[
+    {
+        "$lookup": {
+            "from": "attachments",
+            "localField": "_id",
+            "foreignField": "note_id",
+            "as": "attachments",
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "note_id": {"$toString": "$_id"},
+            "title": "$title",
+            "attachment_count": {"$size": "$attachments"},
+        }
+    },
+    # (Optional) {"$match": {"attachment_count": {"$gt": 0}}},
+    {"$sort": {"attachment_count": -1, "title": 1, "note_id": 1}},
+]
+```
+- **Semantics & Performance**:
+  - `$lookup` performs a left outer join from `notes` to `attachments`. The query planner leverages the existing `idx_attachments_note_id` index on `attachments`.
+  - `$project` evaluates `{"$size": "$attachments"}` directly inside the MongoDB database engine. **Crucially, attachment documents and binary GridFS chunks are never transmitted to Python**, preventing memory exhaustion.
+  - Notes with 0 attachments yield an empty array from `$lookup` and are accurately counted with `attachment_count: 0`. The query parameter `?include_zero=false` allows filtering to notes with at least one attachment.
+  - Deterministic sort orders by `attachment_count` descending, then title ascending, then `note_id` ascending.

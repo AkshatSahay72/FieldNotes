@@ -9,8 +9,8 @@
 | **Milestone 2** | Research Notes Data Model & CRUD Operations | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 3** | Image Attachments with PyMongo GridFS | **COMPLETED & FULLY TESTED** |
 | **Milestone 4** | Indexing & Efficient Querying | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 5** | Analytics & Aggregation Pipelines | **NOT IMPLEMENTED** (Next Milestone) |
-| **Milestone 6** | Semantic Note Retrieval (Atlas Vector Search) | **NOT IMPLEMENTED** |
+| **Milestone 5** | Analytics & Aggregation Pipelines | **COMPLETED & FULLY VERIFIED** |
+| **Milestone 6** | Semantic Note Retrieval (Atlas Vector Search) | **NOT IMPLEMENTED** (Next Milestone) |
 | **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
 
 ---
@@ -177,10 +177,50 @@
 
 ---
 
+## Milestone 5 Log: MongoDB Aggregation Analytics
+
+- **Date**: 2026-10-13
+- **Objective**: Implement a dedicated analytics API (`/api/analytics`) powered by MongoDB aggregation pipelines and counting operations to provide research overview metrics, tag frequency distribution, daily note creation trends, and per-note attachment summaries.
+- **Verification Status**:
+  - **Automated Test Suite**: 86 tests executed and passing (100% pass rate) with zero failures and zero warnings.
+  - **Isolated Unit & Integration Coverage**: 17 tests added in `tests/test_analytics.py` verifying exact pipeline stage construction (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$dateToString`, `$lookup`, `$size`), overview counts on empty and populated collections, tag counting with deterministic sort (count DESC, tag ASC), case-sensitivity preservation, omission of blank/missing tags, daily activity chronological grouping (UTC), attachment counts with zero-count inclusion/exclusion, and database error safety (503 Service Unavailable).
+  - **Live MongoDB Atlas Smoke Verification**: Executed live integration smoke test (`scratch/smoke_test_atlas_analytics.py`) against live MongoDB Atlas cluster (`fieldnote-cluster.maysnkd.mongodb.net`) using disposable test notes and attachments. Confirmed that all 3 aggregation pipelines (`$unwind` tag distribution, `$dateToString` activity timeline, and `$lookup` attachment summary) execute successfully on Atlas with exact counts, followed by 100% cleanup teardown with zero residual records.
+
+### Files Created or Modified:
+1. `app/schemas.py` *(Modified)*:
+   - Added `AnalyticsOverview` (`total_notes`, `total_attachments`, `notes_with_tags`).
+   - Added `TagCount` (`tag`, `count`).
+   - Added `DailyActivity` (`date`, `count`).
+   - Added `NoteAttachmentSummary` (`note_id`, `title`, `attachment_count`).
+2. `app/routes/analytics.py` *(Created)*:
+   - Implemented pipeline builders: `build_tag_distribution_pipeline()`, `build_note_activity_pipeline()`, and `build_attachment_counts_pipeline()`.
+   - Implemented `GET /api/analytics/overview` (counts for notes, attachments, and notes containing tags).
+   - Implemented `GET /api/analytics/tags` (tag frequency via `$unwind` and `$group`).
+   - Implemented `GET /api/analytics/activity` (chronological note counts by UTC date via `$dateToString`).
+   - Implemented `GET /api/analytics/attachments` (attachment counts per note via `$lookup` and `$size` with `include_zero` parameter).
+3. `app/main.py` *(Modified)*:
+   - Registered `analytics_router` on application instance.
+   - Incremented application version to `0.5.0`.
+4. `tests/test_analytics.py` *(Created)*:
+   - 17 isolated tests validating pipeline definitions, empty collections, populated collections, case-sensitivity, date formatting, lookup joining, and error handling.
+5. `docs/ARCHITECTURE.md` *(Modified)*:
+   - Updated component status table to Milestone 5.
+   - Added Section 7 detailing analytics endpoints, aggregation pipeline definitions, semantics, and performance considerations.
+6. `README.md` *(Modified)*:
+   - Added API usage examples for all 4 analytics endpoints.
+
+### Key Architectural & Engineering Decisions Made:
+- **Efficient Counts for Overview**: Used native PyMongo `count_documents` (`{}` and `{"tags.0": {"$exists": True}}`) for the overview endpoint rather than forcing an expensive aggregation pipeline where simple index-backed counts provide superior clarity and performance.
+- **Defensive Tag Grouping**: The tag distribution pipeline uses `$unwind: "$tags"` followed by `{"$match": {"tags": {"$nin": ["", None]}}}` to ensure notes with empty tag arrays or missing tags are excluded, preventing fabricated blank tags from being counted. Tags are grouped case-sensitively as stored, respecting user input without silent mutation.
+- **Deterministic Sorting**: All aggregation pipelines enforce deterministic ordering: tag distribution sorts by `count` DESC then tag ASC; activity sorts by date ASC; attachment summaries sort by `attachment_count` DESC then title ASC then `note_id` ASC.
+- **Explicit UTC Date Formatting**: Daily note creation activity uses `$dateToString` with `format: "%Y-%m-%d"` and explicit `timezone: "UTC"` to eliminate server timezone discrepancies. Missing calendar days are not fabricated.
+- **Memory-Safe Multi-Collection Join**: Attachment counts use `$lookup` joining `notes._id` to `attachments.note_id` (accelerated by `idx_attachments_note_id`) and calculate `{"$size": "$attachments"}` inside the database engine. Binary GridFS chunks and attachment documents are never loaded into Python RAM.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] MongoDB aggregation pipelines for analytics (`/analytics`, Milestone 5).
 - [NOT IMPLEMENTED] Vector embeddings generation and Atlas Vector Search queries (`/search`, Milestone 6).
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
@@ -190,7 +230,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 5**: Analytics & Aggregation Pipelines
-  - Focus: Multi-stage MongoDB aggregation pipelines for research tag frequency, activity timelines, and summary metrics (`/api/analytics`).
+- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search)
+  - Focus: Generating vector embeddings for note content, defining an Atlas Vector Search index, and implementing semantic similarity retrieval (`/api/search`).
   - Required before starting: Explicit user approval to proceed.
 
