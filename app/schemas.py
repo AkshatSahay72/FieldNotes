@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import List
+from pydantic import BaseModel, Field, field_validator
 
 
 class HealthResponse(BaseModel):
@@ -24,3 +26,73 @@ class HealthResponse(BaseModel):
         description="Current running environment",
         examples=["development", "testing", "production"],
     )
+
+
+class NoteCreate(BaseModel):
+    """Schema for creating a new research note."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        description="Title of the research note (required, non-empty)",
+        examples=["Observed soil moisture anomalies in plot B"],
+    )
+    content: str = Field(
+        ...,
+        description="Body content or findings of the research note",
+        examples=["Moisture sensors at 15cm depth indicated higher saturation after rain."],
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Categorical tags for filtering and organization",
+        examples=[["soil", "moisture", "fieldwork"]],
+    )
+
+    @field_validator("title")
+    @classmethod
+    def validate_title_not_empty(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Title must contain non-whitespace characters")
+        return trimmed
+
+
+class NoteUpdate(BaseModel):
+    """Schema for updating an existing research note."""
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        description="Updated title of the research note (required, non-empty)",
+    )
+    content: str = Field(
+        ...,
+        description="Updated body content of the research note",
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Updated categorical tags",
+    )
+
+    @field_validator("title")
+    @classmethod
+    def validate_title_not_empty(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Title must contain non-whitespace characters")
+        return trimmed
+
+
+class NoteResponse(BaseModel):
+    """Schema for research note response returned by API."""
+
+    id: str = Field(
+        ...,
+        description="Unique string representation of MongoDB ObjectId",
+        examples=["507f1f77bcf86cd799439011"],
+    )
+    title: str
+    content: str
+    tags: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime

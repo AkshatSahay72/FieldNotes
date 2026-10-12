@@ -1,6 +1,8 @@
 import logging
 from typing import Optional
-from pymongo import MongoClient
+from fastapi import Request, HTTPException, status
+from pymongo import MongoClient, DESCENDING
+from pymongo.database import Database
 from pymongo.errors import PyMongoError
 from app.config import Settings
 
@@ -47,3 +49,38 @@ def close_mongo_client(client: Optional[MongoClient]) -> None:
             client.close()
         except Exception as err:
             logger.warning("Error closing MongoDB client: %s", type(err).__name__)
+
+
+def init_db_indexes(db: Optional[Database]) -> None:
+    """Create justified indexes on MongoDB collections.
+    
+    Index justification:
+    - notes.created_at (DESCENDING): The 'GET /api/notes' endpoint retrieves
+      notes ordered by newest first (created_at DESC). Creating a B-tree index
+      on this field avoids memory-intensive in-memory sort stages and ensures
+      efficient index-covered scans as notes volume scales.
+    """
+    if db is None:
+        return
+    try:
+        db["notes"].create_index(
+            [("created_at", DESCENDING)],
+            name="idx_notes_created_at_desc",
+        )
+        logger.info("MongoDB index on notes.created_at created/verified.")
+    except Exception as err:
+        logger.warning("Could not initialize database indexes: %s", type(err).__name__)
+
+
+def get_database(request: Request) -> Database:
+    """FastAPI dependency to retrieve the active MongoDB database from application state.
+    
+    Raises HTTP 503 if the database client is not initialized or unavailable.
+    """
+    db = getattr(request.app.state, "db", None)
+    if db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service is currently unavailable",
+        )
+    return db

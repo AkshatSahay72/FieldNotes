@@ -5,8 +5,9 @@ from fastapi import FastAPI, Depends, Request, Response, status
 from pymongo import MongoClient
 
 from app.config import Settings, get_settings
-from app.db import create_mongo_client, close_mongo_client, ping_database
+from app.db import create_mongo_client, close_mongo_client, ping_database, init_db_indexes
 from app.schemas import HealthResponse
+from app.routes.notes import router as notes_router
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def get_db_client(request: Request) -> Optional[MongoClient]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Manage application lifespan: initialize and cleanly close PyMongo client."""
+    """Manage application lifespan: initialize, index, and cleanly close PyMongo client."""
     client: Optional[MongoClient] = None
     try:
         settings = get_settings()
@@ -26,6 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.db_client = client
         app.state.db = client[settings.database_name]
         logger.info("MongoDB client initialized for database: %s", settings.database_name)
+        # Initialize justified indexes in non-testing environments
+        if settings.app_env != "testing":
+            init_db_indexes(app.state.db)
     except Exception as err:
         logger.error("Failed to initialize MongoDB client: %s", type(err).__name__)
         app.state.db_client = None
@@ -43,9 +47,12 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="Fieldnote API",
         description="Research Notes & Evidence Management System API",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
+
+    # Register modular routers
+    application.include_router(notes_router)
 
     @application.get(
         "/health",

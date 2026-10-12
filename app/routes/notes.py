@@ -1,0 +1,195 @@
+import logging
+from datetime import datetime, timezone
+from typing import List
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pymongo import ReturnDocument
+from pymongo.database import Database
+from pymongo.errors import PyMongoError
+
+from app.db import get_database
+from app.schemas import NoteCreate, NoteUpdate, NoteResponse
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/notes", tags=["Notes"])
+
+
+def validate_object_id(note_id: str) -> ObjectId:
+    """Validate that note_id is a valid 24-character hex ObjectId string.
+    
+    Raises HTTP 400 Bad Request if the format is invalid.
+    """
+    if not ObjectId.is_valid(note_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid note ID format: '{note_id}'",
+        )
+    return ObjectId(note_id)
+
+
+def note_doc_to_response(doc: dict) -> NoteResponse:
+    """Transform a MongoDB document into a typed NoteResponse."""
+    return NoteResponse(
+        id=str(doc["_id"]),
+        title=doc["title"],
+        content=doc["content"],
+        tags=doc.get("tags", []),
+        created_at=doc["created_at"],
+        updated_at=doc["updated_at"],
+    )
+
+
+@router.post(
+    "",
+    response_model=NoteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new research note",
+)
+def create_note(
+    note_in: NoteCreate,
+    db: Database = Depends(get_database),
+) -> NoteResponse:
+    """Create a new research note document in MongoDB."""
+    now = datetime.now(timezone.utc)
+    note_doc = {
+        "title": note_in.title,
+        "content": note_in.content,
+        "tags": note_in.tags,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    try:
+        result = db["notes"].insert_one(note_doc)
+        note_doc["_id"] = result.inserted_id
+        return note_doc_to_response(note_doc)
+    except PyMongoError as err:
+        logger.error("Failed to insert note: %s", type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while creating note",
+        )
+
+
+@router.get(
+    "",
+    response_model=List[NoteResponse],
+    summary="List all research notes (newest first)",
+)
+def list_notes(
+    db: Database = Depends(get_database),
+) -> List[NoteResponse]:
+    """Retrieve all research notes, sorted newest first by created_at."""
+    try:
+        cursor = db["notes"].find().sort("created_at", -1)
+        return [note_doc_to_response(doc) for doc in cursor]
+    except PyMongoError as err:
+        logger.error("Failed to query notes: %s", type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while listing notes",
+        )
+
+
+@router.get(
+    "/{note_id}",
+    response_model=NoteResponse,
+    summary="Retrieve a single research note by ID",
+)
+def get_note(
+    note_id: str,
+    db: Database = Depends(get_database),
+) -> NoteResponse:
+    """Retrieve a single research note document by its ObjectId."""
+    oid = validate_object_id(note_id)
+
+    try:
+        doc = db["notes"].find_one({"_id": oid})
+    except PyMongoError as err:
+        logger.error("Failed to fetch note %s: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while fetching note",
+        )
+
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    return note_doc_to_response(doc)
+
+
+@router.put(
+    "/{note_id}",
+    response_model=NoteResponse,
+    summary="Update a research note by ID",
+)
+def update_note(
+    note_id: str,
+    note_in: NoteUpdate,
+    db: Database = Depends(get_database),
+) -> NoteResponse:
+    """Update title, content, and tags of an existing note."""
+    oid = validate_object_id(note_id)
+    now = datetime.now(timezone.utc)
+
+    try:
+        updated_doc = db["notes"].find_one_and_update(
+            {"_id": oid},
+            {
+                "$set": {
+                    "title": note_in.title,
+                    "content": note_in.content,
+                    "tags": note_in.tags,
+                    "updated_at": now,
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except PyMongoError as err:
+        logger.error("Failed to update note %s: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while updating note",
+        )
+
+    if updated_doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    return note_doc_to_response(updated_doc)
+
+
+@router.delete(
+    "/{note_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a research note by ID",
+)
+def delete_note(
+    note_id: str,
+    db: Database = Depends(get_database),
+) -> Response:
+    """Delete a research note document by its ObjectId."""
+    oid = validate_object_id(note_id)
+
+    try:
+        result = db["notes"].delete_one({"_id": oid})
+    except PyMongoError as err:
+        logger.error("Failed to delete note %s: %s", note_id, type(err).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database operation failed while deleting note",
+        )
+
+    if result.deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
