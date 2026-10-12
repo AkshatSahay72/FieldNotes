@@ -1,0 +1,79 @@
+# Fieldnote
+
+> **A Research Notes & Evidence Management System using MongoDB**
+
+Fieldnote is a lightweight backend system built with **FastAPI** and **PyMongo** designed to showcase core MongoDB concepts, including native document modeling, indexing, aggregation pipelines, and MongoDB Atlas Vector Search.
+
+---
+
+## Academic Focus
+
+This project is tailored for an academic evaluation / viva setting. It deliberately avoids high-level Object-Document Mappers (ODMs) like MongoEngine or Beanie so that direct PyMongo driver usage, queries, indexes, and aggregation stages are transparent and explainable.
+
+### Core Capabilities (Planned Across Milestones)
+1. **Research Notes CRUD**: Idiomatic document CRUD operations with Pydantic validation.
+2. **Evidence & Attachments**: Image uploads with user-provided captions and structured metadata.
+3. **Optimized Indexing**: Single-field, compound, and native text search indexes with query performance explainability.
+4. **Analytics Aggregation Pipelines**: Multi-stage aggregation pipelines for tag analytics and research timeline statistics.
+5. **Semantic Retrieval**: Vector embeddings and MongoDB Atlas Vector Search.
+
+---
+
+## Technical Stack
+
+- **Language**: Python 3.10+
+- **Framework**: FastAPI
+- **Database Driver**: PyMongo
+- **Database**: MongoDB Atlas
+- **Testing**: pytest & HTTPX
+- **Configuration**: Environment variables (`.env`)
+
+---
+
+## Milestone-Driven Development Workflow
+
+The project is built incrementally in strict, reviewable milestones:
+
+- **Milestone 0**: Documentation & Minimal Backend Foundation *(Current)*
+- **Milestone 1**: MongoDB Connection & Health Lifecycle
+- **Milestone 2**: Research Notes Data Model & CRUD Operations
+- **Milestone 3**: Image Attachments & Evidence Metadata
+- **Milestone 4**: Indexing & Efficient Querying
+- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines
+- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search)
+- **Milestone 7**: Minimal Frontend & Deployment Preparation *(Future)*
+
+Documentation files in `docs/` serve as the source of truth:
+- [PROJECT_SPEC.md](docs/PROJECT_SPEC.md): Scope, non-goals, and milestone acceptance criteria.
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): Architectural decisions, schemas, and design constraints.
+- [IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md): Current progress, decisions, verification records, and next milestone.
+
+---
+
+## Quickstart (Milestone 0 Foundation)
+
+### 1. Prerequisites
+- Python 3.10+
+- Virtual environment tool (`venv`)
+
+### 2. Environment Setup
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows (PowerShell):
+.\venv\Scripts\Activate.ps1
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Environment Variables
+Copy `.env.example` to `.env` and fill in your MongoDB Atlas connection details when proceeding to Milestone 1:
+```bash
+cp .env.example .env
+```
+*(Never commit `.env` containing actual credentials).*
