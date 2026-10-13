@@ -427,3 +427,153 @@ def test_javascript_phase_2c1_corrections(client: TestClient):
     assert "deleteAttachmentModal._previousFocus = null;" in js_text
     assert "btnUploadEvidence.focus()" in js_text
     assert "btnRetryEvidence.focus()" in js_text
+
+
+def test_analytics_page_markup_and_controls(client: TestClient):
+    """Verify Phase 2C.2 /analytics page markup, sections, accessible containers, and controls."""
+    res = client.get("/analytics")
+    assert res.status_code == 200
+    html = res.text
+
+    # 1. Main container and header actions
+    assert 'id="analytics-dashboard"' in html
+    assert 'id="btn-refresh-analytics"' in html
+    assert 'Refresh Analytics' in html
+
+    # 2. Section A: Research Overview cards
+    assert 'id="section-overview"' in html
+    assert 'id="overview-loading"' in html
+    assert 'id="overview-error"' in html
+    assert 'id="overview-error-desc"' in html
+    assert 'id="btn-retry-overview"' in html
+    assert 'id="overview-grid"' in html
+    assert 'id="stat-total-notes"' in html
+    assert 'id="stat-total-attachments"' in html
+    assert 'id="stat-notes-with-tags"' in html
+
+    # 3. Section B: Tag Distribution
+    assert 'id="section-tags"' in html
+    assert 'id="tags-loading"' in html
+    assert 'id="tags-error"' in html
+    assert 'id="tags-error-desc"' in html
+    assert 'id="btn-retry-tags"' in html
+    assert 'id="tags-empty"' in html
+    assert 'id="tags-chart-container"' in html
+    assert 'id="tags-chart-bars"' in html
+
+    # 4. Section C: Research Activity
+    assert 'id="section-activity"' in html
+    assert 'id="activity-loading"' in html
+    assert 'id="activity-error"' in html
+    assert 'id="activity-error-desc"' in html
+    assert 'id="btn-retry-activity"' in html
+    assert 'id="activity-empty"' in html
+    assert 'id="activity-chart-container"' in html
+    assert 'id="activity-timeline-list"' in html
+
+    # 5. Section D: Evidence Distribution with accessible zero-toggle
+    assert 'id="section-attachments"' in html
+    assert 'id="toggle-include-zero"' in html
+    assert 'Include notes with zero attachments' in html
+    assert 'id="attachments-loading"' in html
+    assert 'id="attachments-error"' in html
+    assert 'id="attachments-error-desc"' in html
+    assert 'id="btn-retry-attachments"' in html
+    assert 'id="attachments-empty"' in html
+    assert 'id="attachments-empty-desc"' in html
+    assert 'id="attachments-chart-container"' in html
+    assert 'id="attachments-count-info"' in html
+    assert 'id="attachments-chart-list"' in html
+
+    # 6. Accessibility attributes
+    assert 'aria-live="polite"' in html
+    assert 'role="alert"' in html
+    assert 'role="region"' in html
+
+    # 7. Navigation footer links
+    assert 'href="/"' in html
+    assert 'href="/api/analytics/overview"' in html
+
+
+def test_analytics_javascript_contracts_and_resilience(client: TestClient):
+    """Verify Phase 2C.2 analytics JS logic, request-race guards, error handling, and safe DOM construction."""
+    res = client.get("/static/js/app.js")
+    assert res.status_code == 200
+    js_text = res.text
+
+    # 1. Initialization and DOM mount
+    assert "function initAnalytics()" in js_text
+    assert "initAnalytics();" in js_text
+    assert 'document.getElementById("analytics-dashboard")' in js_text
+
+    # 2. Independent section request IDs for out-of-order response protection
+    assert "reqIds = {" in js_text
+    assert "overview: 0" in js_text
+    assert "tags: 0" in js_text
+    assert "activity: 0" in js_text
+    assert "attachments: 0" in js_text
+
+    # 3. Section endpoint URLs and parameter encoding
+    assert '"/api/analytics/overview"' in js_text
+    assert '"/api/analytics/tags"' in js_text
+    assert '"/api/analytics/activity"' in js_text
+    assert '"/api/analytics/attachments?include_zero="' in js_text
+    assert '(includeZero ? "true" : "false")' in js_text
+
+    # 4. Independent section loaders & error retry hooks
+    assert "btnRetryOverview.addEventListener" in js_text
+    assert "btnRetryTags.addEventListener" in js_text
+    assert "btnRetryActivity.addEventListener" in js_text
+    assert "btnRetryAttachments.addEventListener" in js_text
+    assert "toggleIncludeZero.addEventListener" in js_text
+    assert "btnRefresh.addEventListener" in js_text
+
+    # 5. Fault-isolated parallel loading (Promise.allSettled)
+    assert 'typeof Promise.allSettled === "function"' in js_text
+    assert "Promise.allSettled([" in js_text
+
+    # 6. Top-25 display limiter and count messaging
+    assert "var maxDisplay = 25;" in js_text
+    assert "attachments.slice(0, maxDisplay)" in js_text
+    assert '"Showing top " + maxDisplay + " of "' in js_text
+    assert '"Showing " + totalReturned + " of "' in js_text
+
+    # 7. UTC research activity formatting without date fabrication
+    assert 'item.date + " (UTC)"' in js_text
+    assert 'renderResearchActivity(activity)' in js_text
+
+    # 8. Safe DOM construction (preventing XSS)
+    assert 'titleSpan.textContent = item.title;' in js_text
+    assert 'titleSpan.title = item.title;' in js_text
+    assert 'titleSpan.setAttribute("aria-label", item.title);' in js_text
+    assert 'label.textContent = item.tag;' in js_text
+    assert 'fill.setAttribute("role", "progressbar");' in js_text
+
+
+def test_analytics_css_styles(client: TestClient):
+    """Verify Phase 2C.2 analytics visual stylesheet classes and responsive design hooks."""
+    res = client.get("/static/css/style.css")
+    assert res.status_code == 200
+    css = res.text
+
+    # Layout and card containers
+    assert ".analytics-container" in css
+    assert ".analytics-header" in css
+    assert ".analytics-stats-grid" in css
+    assert ".stat-card" in css
+    assert ".stat-value" in css
+    assert ".analytics-charts-grid" in css
+
+    # Chart bars and rows
+    assert ".chart-container" in css
+    assert ".chart-bars-list" in css
+    assert ".chart-bar-row" in css
+    assert ".chart-bar-track" in css
+    assert ".chart-bar-fill" in css
+    assert ".chart-bar-title-truncate" in css
+    assert ".tag-pill-label" in css
+
+    # Theme fill tokens
+    assert ".fill-primary" in css
+    assert ".fill-accent" in css
+    assert ".fill-secondary" in css

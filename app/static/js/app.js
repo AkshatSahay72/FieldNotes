@@ -1303,10 +1303,460 @@
     loadNotes();
   }
 
+  /* ==========================================================================
+     5. Research Analytics Controller (Phase 2C.2)
+     ========================================================================== */
+  function initAnalytics() {
+    var analyticsDashboard = document.getElementById("analytics-dashboard");
+    if (!analyticsDashboard) return;
+
+    // Independent request IDs to protect every section against race conditions & out-of-order responses
+    var reqIds = {
+      overview: 0,
+      tags: 0,
+      activity: 0,
+      attachments: 0
+    };
+
+    // DOM Elements
+    var btnRefresh = document.getElementById("btn-refresh-analytics");
+
+    // Overview Section Elements
+    var overviewLoading = document.getElementById("overview-loading");
+    var overviewError = document.getElementById("overview-error");
+    var overviewErrorDesc = document.getElementById("overview-error-desc");
+    var btnRetryOverview = document.getElementById("btn-retry-overview");
+    var statTotalNotes = document.getElementById("stat-total-notes");
+    var statTotalAttachments = document.getElementById("stat-total-attachments");
+    var statNotesWithTags = document.getElementById("stat-notes-with-tags");
+
+    // Tag Distribution Section Elements
+    var tagsLoading = document.getElementById("tags-loading");
+    var tagsError = document.getElementById("tags-error");
+    var tagsErrorDesc = document.getElementById("tags-error-desc");
+    var btnRetryTags = document.getElementById("btn-retry-tags");
+    var tagsEmpty = document.getElementById("tags-empty");
+    var tagsChartContainer = document.getElementById("tags-chart-container");
+    var tagsChartBars = document.getElementById("tags-chart-bars");
+
+    // Activity Timeline Section Elements
+    var activityLoading = document.getElementById("activity-loading");
+    var activityError = document.getElementById("activity-error");
+    var activityErrorDesc = document.getElementById("activity-error-desc");
+    var btnRetryActivity = document.getElementById("btn-retry-activity");
+    var activityEmpty = document.getElementById("activity-empty");
+    var activityChartContainer = document.getElementById("activity-chart-container");
+    var activityTimelineList = document.getElementById("activity-timeline-list");
+
+    // Evidence Distribution Section Elements
+    var toggleIncludeZero = document.getElementById("toggle-include-zero");
+    var attachmentsLoading = document.getElementById("attachments-loading");
+    var attachmentsError = document.getElementById("attachments-error");
+    var attachmentsErrorDesc = document.getElementById("attachments-error-desc");
+    var btnRetryAttachments = document.getElementById("btn-retry-attachments");
+    var attachmentsEmpty = document.getElementById("attachments-empty");
+    var attachmentsEmptyDesc = document.getElementById("attachments-empty-desc");
+    var attachmentsChartContainer = document.getElementById("attachments-chart-container");
+    var attachmentsCountInfo = document.getElementById("attachments-count-info");
+    var attachmentsChartList = document.getElementById("attachments-chart-list");
+
+    // Section 1: Overview
+    function loadOverview() {
+      var currentId = ++reqIds.overview;
+      if (overviewLoading) overviewLoading.style.display = "flex";
+      if (overviewError) overviewError.style.display = "none";
+
+      return fetch("/api/analytics/overview")
+        .then(function (res) {
+          if (currentId !== reqIds.overview) return null;
+          if (!res.ok) {
+            return res.json().then(function (err) {
+              throw new Error((err && err.detail) || ("Failed to load overview (HTTP " + res.status + ")"));
+            }).catch(function (pErr) {
+              if (pErr.message && pErr.message.indexOf("Failed to load") !== -1) throw pErr;
+              throw new Error("Failed to load overview (HTTP " + res.status + ")");
+            });
+          }
+          return res.json();
+        })
+        .then(function (data) {
+          if (currentId !== reqIds.overview || data === null) return;
+          if (overviewLoading) overviewLoading.style.display = "none";
+          if (statTotalNotes) {
+            statTotalNotes.textContent = typeof data.total_notes === "number" ? data.total_notes.toLocaleString() : "0";
+          }
+          if (statTotalAttachments) {
+            statTotalAttachments.textContent = typeof data.total_attachments === "number" ? data.total_attachments.toLocaleString() : "0";
+          }
+          if (statNotesWithTags) {
+            statNotesWithTags.textContent = typeof data.notes_with_tags === "number" ? data.notes_with_tags.toLocaleString() : "0";
+          }
+        })
+        .catch(function (err) {
+          if (currentId !== reqIds.overview) return;
+          if (overviewLoading) overviewLoading.style.display = "none";
+          if (overviewError) overviewError.style.display = "flex";
+          if (overviewErrorDesc) {
+            overviewErrorDesc.textContent = err.message || "Failed to load research overview.";
+          }
+        });
+    }
+
+    // Section 2: Tag Distribution
+    function renderTagsDistribution(tags) {
+      if (!tagsChartBars) return;
+      tagsChartBars.innerHTML = "";
+      var maxCount = 0;
+      for (var i = 0; i < tags.length; i++) {
+        if (tags[i].count > maxCount) maxCount = tags[i].count;
+      }
+      if (maxCount <= 0) maxCount = 1;
+
+      tags.forEach(function (item) {
+        var row = document.createElement("div");
+        row.className = "chart-bar-row";
+
+        var header = document.createElement("div");
+        header.className = "chart-bar-header";
+
+        var label = document.createElement("span");
+        label.className = "chart-bar-label tag-pill-label";
+        label.textContent = item.tag;
+        label.title = item.tag;
+
+        var val = document.createElement("span");
+        val.className = "chart-bar-value";
+        val.textContent = item.count + (item.count === 1 ? " note" : " notes");
+
+        header.appendChild(label);
+        header.appendChild(val);
+
+        var track = document.createElement("div");
+        track.className = "chart-bar-track";
+
+        var fill = document.createElement("div");
+        fill.className = "chart-bar-fill fill-primary";
+        var pct = Math.round((item.count / maxCount) * 100);
+        fill.style.width = pct + "%";
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-valuenow", String(item.count));
+        fill.setAttribute("aria-valuemin", "0");
+        fill.setAttribute("aria-valuemax", String(maxCount));
+        fill.setAttribute("aria-label", "Tag " + item.tag + ": " + item.count + " notes");
+
+        track.appendChild(fill);
+
+        row.appendChild(header);
+        row.appendChild(track);
+        tagsChartBars.appendChild(row);
+      });
+    }
+
+    function loadTags() {
+      var currentId = ++reqIds.tags;
+      if (tagsLoading) tagsLoading.style.display = "flex";
+      if (tagsError) tagsError.style.display = "none";
+      if (tagsEmpty) tagsEmpty.style.display = "none";
+      if (tagsChartContainer) tagsChartContainer.style.display = "none";
+
+      return fetch("/api/analytics/tags")
+        .then(function (res) {
+          if (currentId !== reqIds.tags) return null;
+          if (!res.ok) {
+            return res.json().then(function (err) {
+              throw new Error((err && err.detail) || ("Failed to load tags (HTTP " + res.status + ")"));
+            }).catch(function (pErr) {
+              if (pErr.message && pErr.message.indexOf("Failed to load") !== -1) throw pErr;
+              throw new Error("Failed to load tags (HTTP " + res.status + ")");
+            });
+          }
+          return res.json();
+        })
+        .then(function (tags) {
+          if (currentId !== reqIds.tags || tags === null) return;
+          if (tagsLoading) tagsLoading.style.display = "none";
+          if (!Array.isArray(tags) || tags.length === 0) {
+            if (tagsEmpty) tagsEmpty.style.display = "flex";
+          } else {
+            renderTagsDistribution(tags);
+            if (tagsChartContainer) tagsChartContainer.style.display = "block";
+          }
+        })
+        .catch(function (err) {
+          if (currentId !== reqIds.tags) return;
+          if (tagsLoading) tagsLoading.style.display = "none";
+          if (tagsError) tagsError.style.display = "flex";
+          if (tagsErrorDesc) {
+            tagsErrorDesc.textContent = err.message || "Failed to load tag distribution.";
+          }
+        });
+    }
+
+    // Section 3: Research Activity
+    function renderResearchActivity(activity) {
+      if (!activityTimelineList) return;
+      activityTimelineList.innerHTML = "";
+      var maxCount = 0;
+      for (var i = 0; i < activity.length; i++) {
+        if (activity[i].count > maxCount) maxCount = activity[i].count;
+      }
+      if (maxCount <= 0) maxCount = 1;
+
+      activity.forEach(function (item) {
+        var row = document.createElement("div");
+        row.className = "chart-bar-row";
+
+        var header = document.createElement("div");
+        header.className = "chart-bar-header";
+
+        var dateLabel = document.createElement("span");
+        dateLabel.className = "chart-bar-label font-mono";
+        dateLabel.textContent = item.date + " (UTC)";
+        dateLabel.title = item.date + " UTC";
+
+        var val = document.createElement("span");
+        val.className = "chart-bar-value";
+        val.textContent = item.count + (item.count === 1 ? " note" : " notes");
+
+        header.appendChild(dateLabel);
+        header.appendChild(val);
+
+        var track = document.createElement("div");
+        track.className = "chart-bar-track";
+
+        var fill = document.createElement("div");
+        fill.className = "chart-bar-fill fill-accent";
+        var pct = Math.round((item.count / maxCount) * 100);
+        fill.style.width = pct + "%";
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-valuenow", String(item.count));
+        fill.setAttribute("aria-valuemin", "0");
+        fill.setAttribute("aria-valuemax", String(maxCount));
+        fill.setAttribute("aria-label", item.date + " UTC: " + item.count + " notes");
+
+        track.appendChild(fill);
+
+        row.appendChild(header);
+        row.appendChild(track);
+        activityTimelineList.appendChild(row);
+      });
+    }
+
+    function loadActivity() {
+      var currentId = ++reqIds.activity;
+      if (activityLoading) activityLoading.style.display = "flex";
+      if (activityError) activityError.style.display = "none";
+      if (activityEmpty) activityEmpty.style.display = "none";
+      if (activityChartContainer) activityChartContainer.style.display = "none";
+
+      return fetch("/api/analytics/activity")
+        .then(function (res) {
+          if (currentId !== reqIds.activity) return null;
+          if (!res.ok) {
+            return res.json().then(function (err) {
+              throw new Error((err && err.detail) || ("Failed to load activity (HTTP " + res.status + ")"));
+            }).catch(function (pErr) {
+              if (pErr.message && pErr.message.indexOf("Failed to load") !== -1) throw pErr;
+              throw new Error("Failed to load activity (HTTP " + res.status + ")");
+            });
+          }
+          return res.json();
+        })
+        .then(function (activity) {
+          if (currentId !== reqIds.activity || activity === null) return;
+          if (activityLoading) activityLoading.style.display = "none";
+          if (!Array.isArray(activity) || activity.length === 0) {
+            if (activityEmpty) activityEmpty.style.display = "flex";
+          } else {
+            renderResearchActivity(activity);
+            if (activityChartContainer) activityChartContainer.style.display = "block";
+          }
+        })
+        .catch(function (err) {
+          if (currentId !== reqIds.activity) return;
+          if (activityLoading) activityLoading.style.display = "none";
+          if (activityError) activityError.style.display = "flex";
+          if (activityErrorDesc) {
+            activityErrorDesc.textContent = err.message || "Failed to load research activity.";
+          }
+        });
+    }
+
+    // Section 4: Evidence Distribution
+    function renderEvidenceDistribution(attachments) {
+      if (!attachmentsChartList) return;
+      attachmentsChartList.innerHTML = "";
+      var totalReturned = attachments.length;
+      var maxDisplay = 25;
+      var sliced = attachments.slice(0, maxDisplay);
+
+      if (attachmentsCountInfo) {
+        if (totalReturned > maxDisplay) {
+          attachmentsCountInfo.textContent = "Showing top " + maxDisplay + " of " + totalReturned + " research notes";
+        } else {
+          attachmentsCountInfo.textContent = "Showing " + totalReturned + " of " + totalReturned + " research notes";
+        }
+      }
+
+      var maxCount = 0;
+      for (var i = 0; i < sliced.length; i++) {
+        if (sliced[i].attachment_count > maxCount) maxCount = sliced[i].attachment_count;
+      }
+      if (maxCount <= 0) maxCount = 1;
+
+      sliced.forEach(function (item) {
+        var row = document.createElement("div");
+        row.className = "chart-bar-row";
+
+        var header = document.createElement("div");
+        header.className = "chart-bar-header";
+
+        var titleSpan = document.createElement("span");
+        titleSpan.className = "chart-bar-label chart-bar-title-truncate";
+        titleSpan.textContent = item.title;
+        titleSpan.title = item.title;
+        titleSpan.setAttribute("aria-label", item.title);
+
+        var val = document.createElement("span");
+        val.className = "chart-bar-value";
+        val.textContent = item.attachment_count + (item.attachment_count === 1 ? " attachment" : " attachments");
+
+        header.appendChild(titleSpan);
+        header.appendChild(val);
+
+        var track = document.createElement("div");
+        track.className = "chart-bar-track";
+
+        var fill = document.createElement("div");
+        fill.className = "chart-bar-fill fill-secondary";
+        var pct = item.attachment_count > 0 ? Math.round((item.attachment_count / maxCount) * 100) : 0;
+        fill.style.width = pct + "%";
+        fill.setAttribute("role", "progressbar");
+        fill.setAttribute("aria-valuenow", String(item.attachment_count));
+        fill.setAttribute("aria-valuemin", "0");
+        fill.setAttribute("aria-valuemax", String(maxCount));
+        fill.setAttribute("aria-label", item.title + ": " + item.attachment_count + " attachments");
+
+        track.appendChild(fill);
+
+        row.appendChild(header);
+        row.appendChild(track);
+        attachmentsChartList.appendChild(row);
+      });
+    }
+
+    function loadAttachments() {
+      var includeZero = toggleIncludeZero ? toggleIncludeZero.checked : true;
+      var currentId = ++reqIds.attachments;
+
+      if (attachmentsLoading) attachmentsLoading.style.display = "flex";
+      if (attachmentsError) attachmentsError.style.display = "none";
+      if (attachmentsEmpty) attachmentsEmpty.style.display = "none";
+      if (attachmentsChartContainer) attachmentsChartContainer.style.display = "none";
+
+      var url = "/api/analytics/attachments?include_zero=" + (includeZero ? "true" : "false");
+
+      return fetch(url)
+        .then(function (res) {
+          if (currentId !== reqIds.attachments) return null;
+          if (!res.ok) {
+            return res.json().then(function (err) {
+              throw new Error((err && err.detail) || ("Failed to load attachments summary (HTTP " + res.status + ")"));
+            }).catch(function (pErr) {
+              if (pErr.message && pErr.message.indexOf("Failed to load") !== -1) throw pErr;
+              throw new Error("Failed to load attachments summary (HTTP " + res.status + ")");
+            });
+          }
+          return res.json();
+        })
+        .then(function (attachments) {
+          if (currentId !== reqIds.attachments || attachments === null) return;
+          if (attachmentsLoading) attachmentsLoading.style.display = "none";
+          if (!Array.isArray(attachments) || attachments.length === 0) {
+            if (attachmentsEmpty) attachmentsEmpty.style.display = "flex";
+            if (attachmentsEmptyDesc) {
+              attachmentsEmptyDesc.textContent = includeZero
+                ? "No research notes exist in the database."
+                : "No research notes currently have evidence attachments.";
+            }
+          } else {
+            renderEvidenceDistribution(attachments);
+            if (attachmentsChartContainer) attachmentsChartContainer.style.display = "block";
+          }
+        })
+        .catch(function (err) {
+          if (currentId !== reqIds.attachments) return;
+          if (attachmentsLoading) attachmentsLoading.style.display = "none";
+          if (attachmentsError) attachmentsError.style.display = "flex";
+          if (attachmentsErrorDesc) {
+            attachmentsErrorDesc.textContent = err.message || "Failed to load evidence distribution.";
+          }
+        });
+    }
+
+    function loadAllAnalytics() {
+      // Use Promise.allSettled so individual failures do not disrupt other sections
+      if (typeof Promise.allSettled === "function") {
+        Promise.allSettled([
+          loadOverview(),
+          loadTags(),
+          loadActivity(),
+          loadAttachments()
+        ]);
+      } else {
+        loadOverview();
+        loadTags();
+        loadActivity();
+        loadAttachments();
+      }
+    }
+
+    // Attach Event Listeners
+    if (btnRefresh) {
+      btnRefresh.addEventListener("click", function () {
+        loadAllAnalytics();
+      });
+    }
+
+    if (btnRetryOverview) {
+      btnRetryOverview.addEventListener("click", function () {
+        loadOverview();
+      });
+    }
+
+    if (btnRetryTags) {
+      btnRetryTags.addEventListener("click", function () {
+        loadTags();
+      });
+    }
+
+    if (btnRetryActivity) {
+      btnRetryActivity.addEventListener("click", function () {
+        loadActivity();
+      });
+    }
+
+    if (btnRetryAttachments) {
+      btnRetryAttachments.addEventListener("click", function () {
+        loadAttachments();
+      });
+    }
+
+    if (toggleIncludeZero) {
+      toggleIncludeZero.addEventListener("change", function () {
+        loadAttachments();
+      });
+    }
+
+    // Initial load
+    loadAllAnalytics();
+  }
+
   // Initialize all features on DOM Ready
   document.addEventListener("DOMContentLoaded", function () {
     initDynamicYear();
     initMobileNavigation();
     initDashboard();
+    initAnalytics();
   });
 })();

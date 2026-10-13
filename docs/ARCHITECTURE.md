@@ -53,7 +53,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestones 6B, 6D.4: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script verified on live Atlas with dry-run, idempotency, and concurrency protection) |
 | **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
 | **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
-| **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A, 2B & 2C.1)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, research dashboard with dual text/semantic search, note CRUD modals, and Phase 2C.1 Evidence Gallery (GridFS image upload, thumbnail grid, full-size lightbox, attachment deletion) |
+| **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A, 2B, 2C.1 & 2C.2)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, research dashboard with dual text/semantic search, note CRUD modals, Phase 2C.1 Evidence Gallery, and Phase 2C.2 Analytics Visualizations (overview cards, ranked tag bars, UTC activity timeline, evidence ranking with zero-toggle, top-25 limits, independent request-race protection, and fault-tolerant parallel loading) |
 
 ---
 
@@ -451,3 +451,28 @@ Phase 2C.1 integrates research evidence attachment viewing and upload directly i
   - **Broken Image Grace**: Prevents infinite retry loops by detaching `onerror` and rendering an accessible fallback indicator.
   - **Stacked Modal Accessibility**: Supports stacked dialogs (Evidence Modal -> Lightbox / Delete Confirmation), trapping `Tab` and `Shift+Tab` focus in the topmost active dialog and restoring focus to the specific triggering button upon closure.
   - **Safe Rendering**: All user-authored captions, descriptions, and filenames are rendered exclusively via DOM `textContent` and `document.createElement`.
+
+### 9.4 Analytics Visualizations Architecture (Milestone 7 — Phase 2C.2)
+
+Phase 2C.2 implements the interactive analytics visualizations on `/analytics` powered by multi-stage MongoDB aggregation pipelines:
+
+- **Client State & Independent Race-Condition Protection**:
+  - `reqIds`: Monotonically increasing independent request sequence counters per section (`overview`, `tags`, `activity`, `attachments`).
+  - Stale network responses in one section cannot overwrite newer results or disrupt other sections.
+  - Toggling the zero-attachments checkbox increments only `reqIds.attachments`, maintaining complete isolation from overview, tag, and activity panels.
+
+- **Direct Backend Aggregation Endpoint Integration**:
+  - **Overview Cards**: Calls `GET /api/analytics/overview` returning `{total_notes, total_attachments, notes_with_tags}`. Correctly displays zero values (`0`, never blank); avoids synthesizing unsubstantiated percentages or ratios.
+  - **Tag Frequency Distribution**: Calls `GET /api/analytics/tags` returning `{tag, count}` ordered deterministically by count descending and tag ascending. Renders horizontal CSS progress bars with ARIA progressbar attributes and safe text wrapping for long tag names.
+  - **Research Activity Timeline**: Calls `GET /api/analytics/activity` returning `{date, count}` in UTC chronological order. Plots actual `YYYY-MM-DD (UTC)` dates without fabricating artificial zero-activity calendar entries.
+  - **Evidence Distribution**: Calls `GET /api/analytics/attachments?include_zero={true|false}`. Supports toggling zero-attachment notes. Implements a maximum display limit of 25 records with explicit count messaging (`Showing top 25 of X research notes` vs. `Showing X of X research notes`). Long titles are visually truncated with CSS ellipsis while preserving full accessible text via `title` and `aria-label` attributes.
+
+- **Fault-Tolerant Parallel Loading & Per-Section Retries**:
+  - Uses `Promise.allSettled` for concurrent section fetching; individual endpoint failures (e.g. 503 Service Unavailable) do not suppress or break successful panels.
+  - Each section features dedicated loading (`aria-live="polite"`), error (`role="alert"`), empty, and retry hooks.
+  - Global `#btn-refresh-analytics` refreshes all panels concurrently, while section-specific retry buttons retry only their corresponding panel.
+
+- **Security & Accessibility**:
+  - **Zero Charting Dependencies**: Built entirely with Vanilla JavaScript and CSS design tokens; no external visualization libraries.
+  - **XSS Immunity**: User-controlled tags, titles, dates, and counts are rendered exclusively using `document.createElement` and `textContent`.
+  - **Responsive Design**: Fluid CSS grid and flexbox layouts maintain full usability down to 320px viewport width without horizontal page scroll.

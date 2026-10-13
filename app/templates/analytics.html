@@ -4,47 +4,196 @@
 {% block description %}Real-time MongoDB aggregation pipeline insights for research note tags, creation timelines, and evidence distribution.{% endblock %}
 
 {% block content %}
-<section class="card">
-  <div class="card-header">
-    <span class="badge badge-accent">MongoDB Aggregation Pipelines</span>
-    <h1 class="card-title">Research Analytics &amp; Pipeline Insights</h1>
-    <p>Analytical summaries computed directly using multi-stage MongoDB aggregation pipelines.</p>
-  </div>
+<div id="analytics-dashboard" class="analytics-container">
+  <!-- Analytics Header / Page Title -->
+  <header class="analytics-header">
+    <div class="analytics-header-titles">
+      <span class="badge badge-accent">MongoDB Aggregation Pipelines</span>
+      <h1 class="analytics-title">Research Analytics &amp; Pipeline Insights</h1>
+      <p class="analytics-subtitle">Analytical summaries computed directly using multi-stage MongoDB aggregation pipelines.</p>
+    </div>
+    <div class="analytics-header-actions">
+      <button type="button" id="btn-refresh-analytics" class="btn btn-secondary" aria-label="Refresh all analytics data">
+        <span aria-hidden="true">&#x21bb;</span> Refresh Analytics
+      </button>
+    </div>
+  </header>
 
-  <div class="card-body">
-    <p>
-      This view surfaces analytical metrics across research notes and GridFS image attachments.
-      Interactive pipeline visualizations (tag distributions via <code>$unwind</code> &amp; <code>$group</code>, 
-      chronological activity trends via <code>$dateToString</code>, and attachment counts via <code>$lookup</code>) 
-      will be rendered in Phase 2C.
-    </p>
-
-    <div class="status-panel">
-      <h4>Available Backend Aggregation Endpoints</h4>
-      <ul class="status-list">
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><code>GET /api/analytics/overview</code> &mdash; Total notes, attachments, and tagged notes summary.</span>
-        </li>
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><code>GET /api/analytics/tags</code> &mdash; Categorical tag frequency counts and ranking.</span>
-        </li>
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><code>GET /api/analytics/activity</code> &mdash; Daily note creation frequency timeline.</span>
-        </li>
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><code>GET /api/analytics/attachments</code> &mdash; Per-note evidence attachment counts.</span>
-        </li>
-      </ul>
+  <!-- Section A: Overview Cards -->
+  <section id="section-overview" class="analytics-section" aria-labelledby="overview-heading">
+    <div class="section-header">
+      <h2 id="overview-heading" class="section-title">Research Overview</h2>
     </div>
 
-    <div class="btn-group">
-      <a href="/" class="btn btn-primary">Return to Dashboard</a>
-      <a href="/api/analytics/overview" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Inspect Raw Overview JSON</a>
+    <!-- Loading State -->
+    <div id="overview-loading" class="state-container state-container-sm" style="display: none;" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading overview metrics...</p>
     </div>
+
+    <!-- Error State -->
+    <div id="overview-error" class="state-container state-container-sm error-state" style="display: none;" role="alert">
+      <div class="error-icon" aria-hidden="true">!</div>
+      <h3>Unable to Load Overview</h3>
+      <p id="overview-error-desc">Failed to fetch overview metrics from the backend.</p>
+      <button type="button" id="btn-retry-overview" class="btn btn-secondary">Retry</button>
+    </div>
+
+    <!-- Overview Grid -->
+    <div id="overview-grid" class="analytics-stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total Notes</span>
+        <span id="stat-total-notes" class="stat-value" aria-live="polite">&mdash;</span>
+        <span class="stat-meta">Research records in database</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Total Attachments</span>
+        <span id="stat-total-attachments" class="stat-value" aria-live="polite">&mdash;</span>
+        <span class="stat-meta">Evidence images in GridFS</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Notes With Valid Tags</span>
+        <span id="stat-notes-with-tags" class="stat-value" aria-live="polite">&mdash;</span>
+        <span class="stat-meta">Categorized research entries</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charts Grid for Tag Distribution and Activity Timeline -->
+  <div class="analytics-charts-grid">
+    <!-- Section B: Tag Distribution -->
+    <section id="section-tags" class="analytics-section card" aria-labelledby="tags-heading">
+      <div class="card-header">
+        <div class="section-title-wrap">
+          <span class="badge badge-accent"><code>$unwind</code> &amp; <code>$group</code></span>
+          <h2 id="tags-heading" class="section-title">Tag Distribution</h2>
+        </div>
+        <p class="section-desc">Frequency distribution across all valid non-empty research tags in deterministic order.</p>
+      </div>
+
+      <div class="card-body">
+        <!-- Loading State -->
+        <div id="tags-loading" class="state-container state-container-sm" style="display: none;" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Loading tag distribution...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="tags-error" class="state-container state-container-sm error-state" style="display: none;" role="alert">
+          <div class="error-icon" aria-hidden="true">!</div>
+          <h3>Unable to Load Tag Distribution</h3>
+          <p id="tags-error-desc">Failed to fetch tag counts from the backend.</p>
+          <button type="button" id="btn-retry-tags" class="btn btn-secondary">Retry</button>
+        </div>
+
+        <!-- Empty State -->
+        <div id="tags-empty" class="state-container state-container-sm empty-state" style="display: none;">
+          <div class="empty-icon" aria-hidden="true">&empty;</div>
+          <h3>No Tags Recorded</h3>
+          <p>No tagged research notes were found in the database.</p>
+        </div>
+
+        <!-- Chart Container -->
+        <div id="tags-chart-container" class="chart-container" style="display: none;" role="region" aria-label="Tag frequency ranking">
+          <div id="tags-chart-bars" class="chart-bars-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section C: Research Activity -->
+    <section id="section-activity" class="analytics-section card" aria-labelledby="activity-heading">
+      <div class="card-header">
+        <div class="section-title-wrap">
+          <span class="badge badge-accent"><code>$dateToString</code> &amp; <code>$sort</code></span>
+          <h2 id="activity-heading" class="section-title">Research Activity</h2>
+        </div>
+        <p class="section-desc">Notes created per calendar day (UTC). Only active dates with notes are displayed.</p>
+      </div>
+
+      <div class="card-body">
+        <!-- Loading State -->
+        <div id="activity-loading" class="state-container state-container-sm" style="display: none;" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Loading activity trends...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="activity-error" class="state-container state-container-sm error-state" style="display: none;" role="alert">
+          <div class="error-icon" aria-hidden="true">!</div>
+          <h3>Unable to Load Activity</h3>
+          <p id="activity-error-desc">Failed to fetch activity timeline from the backend.</p>
+          <button type="button" id="btn-retry-activity" class="btn btn-secondary">Retry</button>
+        </div>
+
+        <!-- Empty State -->
+        <div id="activity-empty" class="state-container state-container-sm empty-state" style="display: none;">
+          <div class="empty-icon" aria-hidden="true">&empty;</div>
+          <h3>No Research Activity</h3>
+          <p>No notes have been created yet to plot an activity timeline.</p>
+        </div>
+
+        <!-- Chart Container -->
+        <div id="activity-chart-container" class="chart-container" style="display: none;" role="region" aria-label="Chronological research activity timeline">
+          <div id="activity-timeline-list" class="activity-timeline-list"></div>
+        </div>
+      </div>
+    </section>
   </div>
-</section>
+
+  <!-- Section D: Evidence Distribution -->
+  <section id="section-attachments" class="analytics-section card" aria-labelledby="attachments-heading">
+    <div class="card-header attachments-header-flex">
+      <div>
+        <div class="section-title-wrap">
+          <span class="badge badge-accent"><code>$lookup</code> &amp; <code>$size</code></span>
+          <h2 id="attachments-heading" class="section-title">Evidence Distribution</h2>
+        </div>
+        <p class="section-desc">Attachment count ranking per research note without fetching binary image chunks.</p>
+      </div>
+      <div class="attachments-filter-control">
+        <label for="toggle-include-zero" class="toggle-checkbox-label">
+          <input type="checkbox" id="toggle-include-zero" checked />
+          <span>Include notes with zero attachments</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <!-- Loading State -->
+      <div id="attachments-loading" class="state-container state-container-sm" style="display: none;" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Loading evidence distribution...</p>
+      </div>
+
+      <!-- Error State -->
+      <div id="attachments-error" class="state-container state-container-sm error-state" style="display: none;" role="alert">
+        <div class="error-icon" aria-hidden="true">!</div>
+        <h3>Unable to Load Evidence Distribution</h3>
+        <p id="attachments-error-desc">Failed to fetch attachment rankings from the backend.</p>
+        <button type="button" id="btn-retry-attachments" class="btn btn-secondary">Retry</button>
+      </div>
+
+      <!-- Empty State -->
+      <div id="attachments-empty" class="state-container state-container-sm empty-state" style="display: none;">
+        <div class="empty-icon" aria-hidden="true">&empty;</div>
+        <h3>No Evidence Records Found</h3>
+        <p id="attachments-empty-desc">No research notes match the current evidence attachment criteria.</p>
+      </div>
+
+      <!-- Chart / Listing Container -->
+      <div id="attachments-chart-container" class="chart-container" style="display: none;" role="region" aria-label="Attachment counts per note">
+        <div class="attachments-meta-bar">
+          <span id="attachments-count-info" class="attachments-count-info" aria-live="polite"></span>
+        </div>
+        <div id="attachments-chart-list" class="chart-bars-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Navigation Footer -->
+  <div class="btn-group">
+    <a href="/" class="btn btn-primary">&larr; Return to Dashboard</a>
+    <a href="/api/analytics/overview" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Inspect Raw Overview JSON</a>
+  </div>
+</div>
 {% endblock %}

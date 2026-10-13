@@ -65,8 +65,12 @@ Fieldnote serves a mobile-ready, accessible researcher interface built with Fast
     - Multipart image upload form (JPEG, PNG, WebP up to 5 MB) with client validation and loading states.
     - Responsive thumbnail gallery streaming directly from PyMongo GridFS.
     - Accessible full-size image lightbox modal with image metadata and keyboard navigation.
-    - Deletion confirmation dialog for removing attachments safely without deleting the parent note.
-- **Analytics & Pipeline Insights (`/analytics`)**: Aggregation pipeline visualization shell.
+- **Analytics & Pipeline Insights (`/analytics`)**:
+  - Live research overview cards (Total notes, attachments, tagged notes).
+  - Categorical tag distribution rendered as ranked horizontal bars via `$unwind` & `$group`.
+  - Chronological daily note creation timeline via `$dateToString` (UTC).
+  - Per-note evidence attachment rankings via `$lookup` & `$size`, with toggleable zero-count inclusion and top-25 limits.
+  - Section-level loading, error, retry, and empty states with independent request-race protection and parallel fetch via `Promise.allSettled`.
 - **Interactive Swagger API Documentation (`/docs`)**: OpenAPI schema and interactive endpoint testing.
 
 
