@@ -292,11 +292,61 @@
 
 ---
 
+## Milestone 6D.2 Log: Provision Atlas Vector Search Index
+
+- **Date**: 2026-10-13
+- **Objective**: Provision the official Atlas Vector Search index `idx_notes_vector` on `fieldnote_db.notes`, poll until confirmed `READY` and queryable, verify that zero documents were modified, and ensure duplicate prevention.
+- **Verification Status**: Verified index provisioned on Atlas cluster. Status is `READY`, `queryable` is `True`, index ID is `6acdcfb758189810955f17de`. Confirmed document count in `notes` collection remains strictly 0. Confirmed 10 unit tests for `scripts/provision_vector_index.py` passed. Live semantic retrieval has NOT yet been run.
+
+### Files Created:
+1. `scripts/provision_vector_index.py` — Dedicated, idempotent CLI script to inspect and provision the `idx_notes_vector` Atlas Vector Search index using PyMongo's `SearchIndexModel` API. Features connectivity verification via ping, duplicate creation refusal, polling loop with timeout, and clean logging without credential leakage.
+2. `tests/test_provision_vector_index.py` — 10 unit tests covering index discovery, duplicate prevention, readiness polling, timeout handling, error reporting, and `--check-only` mode.
+
+### Files Modified:
+1. `docs/ARCHITECTURE.md` — Updated component status table and added Section 8.3 documenting index definition, provisioning script, and operational readiness.
+2. `docs/IMPLEMENTATION_LOG.md` — Logged Milestone 6D.2 provisioning details, verified index metadata, and updated remaining milestones.
+3. `README.md` — Added CLI instructions for `scripts/provision_vector_index.py`.
+
+### Actual Provisioned Index Details on MongoDB Atlas:
+- **Target Database**: `fieldnote_db`
+- **Target Collection**: `notes`
+- **Index Name**: `idx_notes_vector`
+- **Index ID**: `6acdcfb758189810955f17de`
+- **Index Type**: `vectorSearch`
+- **Definition**:
+  ```json
+  {
+    "fields": [
+      {
+        "type": "vector",
+        "path": "embedding",
+        "numDimensions": 384,
+        "similarity": "cosine"
+      }
+    ]
+  }
+  ```
+- **Observed Lifecycle**:
+  - Initial request: `create_search_index` returned `'idx_notes_vector'`.
+  - Initial poll (0.0s): `status: PENDING`, `queryable: False`.
+  - Final poll (40.5s): `status: READY`, `queryable: True`.
+- **Collection State**: Confirmed note document count is exactly `0` before and after provisioning.
+- **Secondary Indexes**: All 5 existing secondary indexes (`_id_`, `idx_notes_created_at_desc`, `idx_notes_tags`, `idx_notes_text`, `idx_notes_created_at_id_desc`) remain intact and untouched.
+
+### Key Architectural & Engineering Decisions Made:
+- **Dedicated Out-of-Band Script**: Index creation is handled via `scripts/provision_vector_index.py` rather than on FastAPI startup or lifespan. Application startup remains fast and completely independent of Atlas Search index provisioning.
+- **Duplicate Prevention**: The script checks `list_search_indexes()` prior to creation. If `idx_notes_vector` already exists, it warns and safely refuses to recreate or overwrite.
+- **Bounded Polling**: Employs an elapsed-time loop polling every 5.0s up to a configurable timeout (default 300s). Fails fast if the index reports `FAILED` status.
+- **Zero Vector or Data Mutation**: The provisioning script operates strictly on index metadata and performs zero document inserts, updates, or deletes.
+- **Strict Scope Boundary**: Live semantic query execution (`$vectorSearch`), test note seeding, and embedding backfills are strictly deferred to subsequent milestones.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] MongoDB Atlas Vector Search index creation and live provisioning (Milestone 6D).
-- [NOT IMPLEMENTED] Live Atlas vector search smoke verification (Milestone 6D).
+- [NOT IMPLEMENTED] Live Atlas vector search query validation / smoke tests (Milestone 6D.3).
+- [NOT IMPLEMENTED] Live note insertion and embedding backfill on Atlas (Milestone 6D.4).
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
@@ -306,7 +356,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 6D**: Atlas Vector Search Index Provisioning & Live Verification
-  - Focus: Defining and provisioning the Atlas Search index `idx_notes_vector` with cosine similarity, and executing live Atlas cluster verification.
+- **Milestone 6D.3 / 6D.4**: Live Atlas Vector Search Smoke Test & Backfill Verification
+  - Focus: Seeding test notes, verifying live `$vectorSearch` similarity retrieval via `/api/search/semantic`, testing backfill execution, and cleaning up test documents.
   - Required before starting: Explicit user approval to proceed.
 

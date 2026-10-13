@@ -148,6 +148,15 @@ Documentation files in `docs/` serve as the source of truth:
   ```
   *Response:* Returns ranked notes with `score` from `$meta: vectorSearchScore` (relative similarity ranking signal). Note: Atlas Vector Search index provisioning and live cluster validation are deferred to Milestone 6D.
 
+- **Atlas Vector Search Index Provisioning CLI**:
+  ```bash
+  # Inspect current search index status without creating
+  python scripts/provision_vector_index.py --check-only
+
+  # Idempotently provision idx_notes_vector on MongoDB Atlas (polls until READY)
+  python scripts/provision_vector_index.py
+  ```
+
 - **Offline Vector Backfill CLI**:
   ```bash
   # Dry-run inspection
