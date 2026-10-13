@@ -41,7 +41,7 @@ The project is built incrementally in strict, reviewable milestones:
 - **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
 - **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Completed)*
 - **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Completed & Fully Verified)*
-- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2A Foundation)*
+- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2B Dashboard Complete)*
 
 Documentation files in `docs/` serve as the source of truth:
 - [PROJECT_SPEC.md](docs/PROJECT_SPEC.md): Scope, non-goals, and milestone acceptance criteria.
@@ -52,10 +52,17 @@ Documentation files in `docs/` serve as the source of truth:
 
 ## Web Interface
 
-Fieldnote serves a mobile-ready, accessible researcher interface:
-- **Research Observations Dashboard**: `http://127.0.0.1:8000/`
-- **Analytics & Pipeline Insights**: `http://127.0.0.1:8000/analytics`
-- **Interactive Swagger API Documentation**: `http://127.0.0.1:8000/docs`
+Fieldnote serves a mobile-ready, accessible researcher interface built with FastAPI, Jinja2, Vanilla CSS, and Vanilla JavaScript:
+- **Research Observations Dashboard (`/`)**:
+  - Live observation feed with pagination controls (`skip`, `limit`).
+  - Dual-mode search toggle: Native MongoDB text search (`$text`) vs. Atlas Vector Search (`$vectorSearch`).
+  - Categorical tag filtering preserving MongoDB `$in` OR semantics.
+  - Interactive note authoring and editing modal dialogs with client validation.
+  - Accessible delete confirmation modal dialogs (`role="alertdialog"`).
+  - Responsive layout, accessible live toast feedback, and full keyboard navigation.
+- **Analytics & Pipeline Insights (`/analytics`)**: Aggregation pipeline visualization shell.
+- **Interactive Swagger API Documentation (`/docs`)**: OpenAPI schema and interactive endpoint testing.
+
 
 ---
 
@@ -209,4 +216,3 @@ cp .env.example .env
 ```bash
 pytest -v
 ```
-

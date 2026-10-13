@@ -13,7 +13,7 @@
 | **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6C** | Semantic Search API (`/api/search/semantic`) | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6D** | Atlas Vector Search Index Provisioning & Live Verifications (6D.1–6D.4) | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2A Complete)** |
+| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2B Complete)** |
 
 ---
 
@@ -475,10 +475,40 @@ Inserted 4 synthetic notes directly via PyMongo:
 
 ---
 
+## Milestone 7 Log — Phase 2B: Research Dashboard & Note Explorer
+
+- **Date**: 2026-10-13
+- **Objective**: Implement a complete, mobile-responsive, accessible interactive Research Dashboard and Note Explorer utilizing FastAPI, Jinja2, Vanilla CSS, and Vanilla JavaScript. Wire real REST endpoints (`GET /api/notes`, `POST /api/notes`, `GET /api/notes/{id}`, `PUT /api/notes/{id}`, `DELETE /api/notes/{id}`, `GET /api/search/semantic`) without modifying backend contracts, schemas, or Atlas configurations.
+- **Verification Status**: **COMPLETED & FULLY TESTED**. Verified with 148 automated pytest tests (12 UI tests + 136 backend tests). Live Atlas document baseline verified maintained at exactly 0. Clean `git diff --check`.
+
+### Files Modified:
+1. `app/templates/base.html` — Added accessible live toast container (`#toast-container`, `aria-live="polite"`).
+2. `app/templates/index.html` — Full Research Observations Dashboard UI: search mode tab switcher (Text vs Semantic), search input and clear action, tag filter inputs, active filter chips bar, state containers (loading, empty, error with retry), dynamic notes grid, pagination bar (previous, next, limit selector), accessible Create/Edit Note modal (`role="dialog"`), and accessible Delete Confirmation dialog (`role="alertdialog"`).
+3. `app/static/css/style.css` — Responsive styles for dashboard header, controls card, mode switch buttons, form inputs, note cards with tag badges and similarity score pills, note action buttons, empty/error/loading states, pagination bar, modal backdrop and dialogs, and top-right toast notification stack.
+4. `app/static/js/app.js` — Client-side dashboard controller:
+   - State management (`searchMode`, `searchQuery`, `tagFilter`, `skip`, `limit`, `pendingDeleteId`).
+   - Explicit `loadNotes()` routing: calls `GET /api/notes` with text search and tag filters, or `GET /api/search/semantic` with similarity scoring. Strictly zero silent fallback.
+   - Note creation (`POST /api/notes`) and update (`PUT /api/notes/{id}`) with client validation and modal error messaging.
+   - Accessible deletion (`DELETE /api/notes/{id}`) with modal confirmation and focus management.
+   - Safe text rendering via `textContent` preventing script injection.
+   - Live toast notification feedback system.
+5. `tests/test_ui.py` — Added comprehensive tests covering dashboard controls, states, pagination, modals, and client API contracts.
+6. `docs/ARCHITECTURE.md` — Added Section 9.2 documenting Phase 2B client-side architecture and contract integration.
+7. `docs/IMPLEMENTATION_LOG.md` — Recorded Phase 2B completion and updated status.
+8. `README.md` — Updated Web Interface documentation with dashboard capabilities.
+
+### Key Architectural & Safety Decisions Made:
+- **Zero Framework Bloat**: Pure Vanilla JS and CSS; no React, Vue, or heavy libraries introduced.
+- **Strict API Contract Preservation**: All API interactions match existing schemas; zero backend routes or models changed.
+- **Explicit Search Mode Switch**: User explicitly chooses between `$text` and `$vectorSearch`; semantic search never silently falls back to text search.
+- **XSS Prevention**: User content is assigned exclusively to `textContent` or text nodes.
+- **Atlas Safety**: No live Atlas documents created or modified in automated tests; live collection verified at 0 documents.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Interactive Research Notes explorer, note authoring form, tag filtering, and semantic search UI (Milestone 7 — Phase 2B).
 - [NOT IMPLEMENTED] Evidence gallery for GridFS image attachments and pipeline analytics visualizations (Milestone 7 — Phase 2C).
 - [NOT IMPLEMENTED] Deployment configuration to Render or Docker (Milestone 7 — Phase 2D).
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
@@ -489,7 +519,6 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 7 — Phase 2B**: Interactive Research Dashboard & Note Explorer
-  - Focus: Interactive note listing, tag filtering, semantic search toggle, and note creation modal with toast notifications.
+- **Milestone 7 — Phase 2C**: Evidence Gallery & Analytics Visualizations
+  - Focus: Interactive GridFS attachment viewer/uploader and aggregation pipeline charts on `/analytics`.
   - Required before starting: Explicit user approval to proceed.
-

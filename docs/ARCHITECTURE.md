@@ -405,3 +405,27 @@ Fieldnote includes a server-rendered, responsive web interface built directly on
   - Unmapped browser navigation (`Accept: text/html` without `/api/` prefix) renders `404.html` with a working return link.
   - API endpoints and JSON requests (`/api/*` or `Accept: application/json`) preserve standard JSON error structures (`{"detail": "..."}`) without disruption.
 - **Accessible Navigation**: The mobile menu toggle implements explicit ARIA attributes (`aria-expanded`, `aria-controls`), focus management, backdrop dismissal, and `Escape`-key closure.
+
+### 9.2 Research Dashboard & Note Explorer Architecture (Milestone 7 — Phase 2B)
+
+Phase 2B implements the interactive research dashboard controller in `app/static/js/app.js` and Jinja2 template in `app/templates/index.html`:
+
+- **Client State Management**:
+  - `searchMode`: Explicitly toggled between `"text"` and `"semantic"`.
+  - `searchQuery`: Current active search term.
+  - `tagFilter`: Active comma-separated or multi-tag filter string.
+  - `skip` & `limit`: Deterministic pagination state (default `skip: 0`, `limit: 20`).
+  - `pendingDeleteId`: Target note ID staged for deletion confirmation.
+
+- **Explicit API Endpoint Integration**:
+  - **Text Search & Listing**: Calls `GET /api/notes?skip={skip}&limit={limit}`. When query is present, appends `&q={query}`. When tags are present, appends `&tags={tags}` (preserving backend MongoDB `$in` OR semantics).
+  - **Atlas Semantic Search**: Calls `GET /api/search/semantic?q={query}&limit={limit}`. Never falls back silently to text search; displays error banner if semantic search or vector index fails.
+  - **Note Creation**: Calls `POST /api/notes` with JSON `{title, content, tags}`.
+  - **Note Modification**: Calls `GET /api/notes/{id}` to populate modal inputs, then submits `PUT /api/notes/{id}` with updated JSON payload.
+  - **Note Deletion**: Accessible confirmation dialog (`role="alertdialog"`) invokes `DELETE /api/notes/{id}` upon user confirmation.
+
+- **Defensive UI & Security Practices**:
+  - **XSS Prevention**: Note titles, contents, tags, and dates are strictly rendered using DOM `textContent` and `document.createElement`. Raw user input is never injected into `innerHTML`.
+  - **Honest Error Handling**: API error responses (`422`, `404`, `500`, `503`) are surfaced directly with descriptive messaging and contextual retry controls.
+  - **Live Notifications**: Toast notification container (`#toast-container`) with `aria-live="polite"` announces async outcomes (creation, update, deletion, search errors).
+  - **Accessibility**: Modals manage `aria-modal="true"`, focus trapping, `Escape`-key dismissal, and focus restoration to the triggering button.

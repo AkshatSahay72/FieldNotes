@@ -1,45 +1,271 @@
 {% extends "base.html" %}
 
 {% block title %}Fieldnote — Research Dashboard{% endblock %}
-{% block description %}Explore and manage scientific field observations, research notes, and evidence metadata powered by MongoDB Atlas Vector Search.{% endblock %}
+{% block description %}Explore, search, and manage scientific research notes and evidence using MongoDB text and Atlas vector search.{% endblock %}
 
 {% block content %}
-<section class="card">
-  <div class="card-header">
-    <span class="badge badge-info">Milestone 7 &mdash; Phase 2A Foundation</span>
-    <h1 class="card-title">Research Observations Dashboard</h1>
-    <p>A lightweight research notes and evidence management system for field scientists.</p>
+<div class="dashboard-layout">
+  <!-- Top Bar: Title & Primary Action -->
+  <div class="dashboard-header">
+    <div>
+      <h1 class="page-title">Research Observations</h1>
+      <p class="page-subtitle">Manage field notes, observations, and evidence with MongoDB Atlas.</p>
+    </div>
+    <div>
+      <button type="button" id="btn-open-create-modal" class="btn btn-primary" aria-haspopup="dialog">
+        + New Research Note
+      </button>
+    </div>
   </div>
 
-  <div class="card-body">
-    <p>
-      The UI Foundation for Fieldnote is initialized with accessible layouts, responsive navigation, 
-      and static asset delivery. Interactive note authoring, text search, tag filtering, and Atlas vector search 
-      are scheduled for phased implementation.
+  <!-- Search & Filter Controls Panel -->
+  <section class="card controls-card" aria-label="Search and filter controls">
+    <!-- Search Mode Selector -->
+    <div class="search-mode-selector" role="tablist" aria-label="Search mode selection">
+      <button
+        type="button"
+        id="mode-text-btn"
+        class="mode-btn active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="search-form"
+        data-mode="text"
+      >
+        MongoDB Text Search ($text)
+      </button>
+      <button
+        type="button"
+        id="mode-semantic-btn"
+        class="mode-btn"
+        role="tab"
+        aria-selected="false"
+        aria-controls="search-form"
+        data-mode="semantic"
+      >
+        Atlas Semantic Vector Search ($vectorSearch)
+      </button>
+    </div>
+
+    <!-- Search Form -->
+    <form id="search-form" class="search-form" role="search">
+      <div class="search-input-group">
+        <label for="search-input" class="sr-only">Search query</label>
+        <input
+          type="search"
+          id="search-input"
+          class="form-control"
+          placeholder="Search research notes (e.g., 'soil moisture', 'satellite trajectory')..."
+          autocomplete="off"
+        />
+        <button type="submit" id="btn-search-submit" class="btn btn-primary">
+          Search
+        </button>
+        <button type="button" id="btn-search-clear" class="btn btn-secondary" style="display: none;">
+          Clear
+        </button>
+      </div>
+    </form>
+
+    <!-- Tag Filter Bar (Available for Text / Normal Search) -->
+    <div id="tag-filter-section" class="tag-filter-group">
+      <label for="tag-filter-input" class="tag-filter-label">Filter by Tags:</label>
+      <div class="tag-input-row">
+        <input
+          type="text"
+          id="tag-filter-input"
+          class="form-control"
+          placeholder="Comma-separated tags (e.g. soil, nitrogen, botany)..."
+        />
+        <button type="button" id="btn-apply-tags" class="btn btn-secondary">
+          Apply Tags
+        </button>
+        <button type="button" id="btn-clear-tags" class="btn btn-secondary" style="display: none;">
+          Clear Tags
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Filter Indicators -->
+    <div id="active-filters-bar" class="active-filters-bar" style="display: none;" aria-live="polite">
+      <span class="active-filters-title">Active Filters:</span>
+      <div id="active-filter-chips" class="active-filter-chips"></div>
+      <button type="button" id="btn-clear-all-filters" class="btn-link">Clear All</button>
+    </div>
+  </section>
+
+  <!-- Notes State Display -->
+  <section class="notes-section" aria-label="Research notes feed">
+    <!-- Loading Indicator -->
+    <div id="notes-loading" class="state-container" style="display: none;" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading research notes...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="notes-error" class="state-container error-state" style="display: none;" role="alert">
+      <div class="error-icon" aria-hidden="true">!</div>
+      <h3 id="notes-error-title">Unable to Load Notes</h3>
+      <p id="notes-error-desc">An error occurred while contacting the Fieldnote API.</p>
+      <button type="button" id="btn-retry-notes" class="btn btn-secondary">Retry</button>
+    </div>
+
+    <!-- Empty State -->
+    <div id="notes-empty" class="state-container empty-state" style="display: none;">
+      <div class="empty-icon" aria-hidden="true">&empty;</div>
+      <h3>No Research Notes Found</h3>
+      <p id="notes-empty-desc">No research observations match the current filter or search criteria.</p>
+      <button type="button" id="btn-empty-create" class="btn btn-primary">+ Create First Note</button>
+    </div>
+
+    <!-- Notes Cards Grid -->
+    <div id="notes-grid" class="notes-grid" aria-live="polite"></div>
+
+    <!-- Pagination Controls -->
+    <nav id="pagination-controls" class="pagination-bar" aria-label="Notes pagination" style="display: none;">
+      <button type="button" id="btn-prev-page" class="btn btn-secondary" disabled>
+        &larr; Previous
+      </button>
+      <span id="page-indicator" class="page-indicator" aria-current="page">Page 1</span>
+      <button type="button" id="btn-next-page" class="btn btn-secondary">
+        Next &rarr;
+      </button>
+      <div class="limit-selector-group">
+        <label for="limit-select" class="sr-only">Notes per page</label>
+        <select id="limit-select" class="form-control select-control">
+          <option value="10">10 / page</option>
+          <option value="20" selected>20 / page</option>
+          <option value="50">50 / page</option>
+        </select>
+      </div>
+    </nav>
+  </section>
+</div>
+
+<!-- ======================================================================
+     Create / Edit Note Modal Dialog
+     ====================================================================== -->
+<div
+  class="modal-backdrop"
+  id="note-modal-backdrop"
+  aria-hidden="true"
+></div>
+<div
+  class="modal-dialog"
+  id="note-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="note-modal-title"
+  aria-hidden="true"
+>
+  <div class="modal-header">
+    <h2 id="note-modal-title">Create Research Note</h2>
+    <button
+      type="button"
+      id="btn-close-note-modal"
+      class="modal-close-btn"
+      aria-label="Close note dialog"
+    >
+      &times;
+    </button>
+  </div>
+  <form id="note-form" novalidate>
+    <div class="modal-body">
+      <!-- Error Notification inside Modal -->
+      <div id="modal-error-alert" class="modal-error-alert" style="display: none;" role="alert"></div>
+
+      <!-- Hidden ID for Editing -->
+      <input type="hidden" id="note-edit-id" value="" />
+
+      <div class="form-group">
+        <label for="note-title-input" class="form-label">
+          Title <span class="required" aria-hidden="true">*</span>
+        </label>
+        <input
+          type="text"
+          id="note-title-input"
+          class="form-control"
+          required
+          maxlength="256"
+          placeholder="e.g. Glacial flow rate measurements"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="note-content-input" class="form-label">
+          Content <span class="required" aria-hidden="true">*</span>
+        </label>
+        <textarea
+          id="note-content-input"
+          class="form-control textarea-control"
+          rows="6"
+          required
+          placeholder="Detailed observation logs, findings, or sensor readings..."
+        ></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="note-tags-input" class="form-label">Tags</label>
+        <input
+          type="text"
+          id="note-tags-input"
+          class="form-control"
+          placeholder="Comma-separated (e.g. glaciology, ice, field-plot)"
+        />
+        <small class="form-hint">Tags enable categorical filtering and MongoDB analytics aggregation.</small>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" id="btn-cancel-note" class="btn btn-secondary">
+        Cancel
+      </button>
+      <button type="submit" id="btn-save-note" class="btn btn-primary">
+        Save Note
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- ======================================================================
+     Delete Confirmation Modal Dialog
+     ====================================================================== -->
+<div
+  class="modal-backdrop"
+  id="delete-modal-backdrop"
+  aria-hidden="true"
+></div>
+<div
+  class="modal-dialog modal-dialog-sm"
+  id="delete-modal"
+  role="alertdialog"
+  aria-modal="true"
+  aria-labelledby="delete-dialog-title"
+  aria-describedby="delete-dialog-desc"
+  aria-hidden="true"
+>
+  <div class="modal-header">
+    <h2 id="delete-dialog-title">Delete Research Note</h2>
+    <button
+      type="button"
+      id="btn-close-delete-modal"
+      class="modal-close-btn"
+      aria-label="Close delete confirmation dialog"
+    >
+      &times;
+    </button>
+  </div>
+  <div class="modal-body">
+    <p id="delete-dialog-desc">
+      Are you sure you want to delete note <strong id="delete-note-target-title"></strong>?
+      This operation will permanently remove the document and its associated embeddings from MongoDB.
     </p>
-
-    <div class="status-panel">
-      <h4>Milestone 7 Implementation Roadmap</h4>
-      <ul class="status-list">
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><strong>Phase 2A (Current):</strong> UI foundation, responsive base layout, accessible mobile navigation drawer, and custom 404 handler.</span>
-        </li>
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><strong>Phase 2B (Upcoming):</strong> Interactive Research Notes explorer, note creation form, tag filters, and semantic search toggle.</span>
-        </li>
-        <li>
-          <span class="status-bullet">&bull;</span>
-          <span><strong>Phase 2C (Upcoming):</strong> Evidence gallery for GridFS image attachments and aggregation pipeline analytics charts.</span>
-        </li>
-      </ul>
-    </div>
-
-    <div class="btn-group">
-      <a href="/analytics" class="btn btn-primary">View Analytics Shell</a>
-      <a href="/docs" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Explore FastAPI Swagger Docs</a>
-    </div>
   </div>
-</section>
+  <div class="modal-footer">
+    <button type="button" id="btn-cancel-delete" class="btn btn-secondary">
+      Cancel
+    </button>
+    <button type="button" id="btn-confirm-delete" class="btn btn-danger">
+      Delete Permanently
+    </button>
+  </div>
+</div>
 {% endblock %}
