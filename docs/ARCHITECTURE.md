@@ -51,8 +51,8 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
 | **Aggregation Pipelines** | Multi-stage analytical queries | **IMPLEMENTED** (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$lookup`, `$dateToString`) |
 | **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestone 6B: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script) |
-| **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestone 6C: `GET /api/search/semantic` with query embedding, pipeline construction, score projection) |
-| **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`; live semantic retrieval verification deferred to subsequent milestone) |
+| **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
+| **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
 
 ---
 
@@ -354,4 +354,4 @@ Milestone 6D.2 provisioned and verified the official Atlas Vector Search index o
   - Atlas Status: `READY`
   - Queryable: `True`
   - Notes Document Count: `0`
-  - *Note*: Live semantic query retrieval against notes has not yet been executed in this milestone.
+  - *Note*: Live semantic query retrieval against research notes verified end-to-end on MongoDB Atlas in Milestone 6D.3; baseline collection state verified restored to 0 documents.

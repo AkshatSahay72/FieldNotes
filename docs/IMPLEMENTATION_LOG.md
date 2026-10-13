@@ -342,11 +342,68 @@
 
 ---
 
+## Milestone 6D.3 Log: Live Semantic Retrieval Verification
+
+- **Date**: 2026-10-13
+- **Objective**: Execute an end-to-end live semantic retrieval smoke test against the running FastAPI application and MongoDB Atlas cluster (`fieldnote_db.notes`) using the provisioned `idx_notes_vector` index.
+- **Verification Status**: **VERIFIED LIVE AGAINST ATLAS**. Confirmed 100% correct semantic similarity retrieval across all 5 test query categories. Confirmed zero internal vector leakage in response payloads. Confirmed exact cleanup of all temporary test notes, restoring the collection baseline count to strictly 0.
+
+### Test Execution Details:
+- **Test Run Identifier**: `test-6d3-5d7675b5`
+- **Atlas Database**: `fieldnote_db`
+- **Target Collection**: `notes`
+- **Search Index**: `idx_notes_vector` (verified `READY`, `queryable: True`)
+- **Baseline Document Count**: `0`
+
+### Temporary Test Data Created:
+Created 3 synthetic research notes via `POST /api/notes`:
+1. **Note 1** (`6acdd563a481632cbe31cda7`):
+   - Title: *"Orbital Mechanics and Satellite Trajectory Calculations"*
+   - Content: *"Calculated Hohmann transfer orbits, delta-v budgets, and gravitational perturbations for Low Earth Orbit satellite stationkeeping."*
+   - Tags: `["orbital-mechanics", "aerospace", "test-6d3-5d7675b5"]`
+   - Embedding verification: 384 finite numeric floats, model `sentence-transformers/all-MiniLM-L6-v2`.
+2. **Note 2** (`6acdd563a481632cbe31cda8`):
+   - Title: *"Plant Root Architecture and Soil Moisture Uptake"*
+   - Content: *"Analyzed xylem water transport, hydraulic redistribution, and root depth profiles under variable soil moisture deficit conditions."*
+   - Tags: `["botany", "soil-moisture", "test-6d3-5d7675b5"]`
+   - Embedding verification: 384 finite numeric floats, model `sentence-transformers/all-MiniLM-L6-v2`.
+3. **Note 3** (`6acdd563a481632cbe31cda9`):
+   - Title: *"Database Indexing and B-Tree Query Optimization"*
+   - Content: *"Evaluated compound index selectivity, execution plans, and write overhead for high-concurrency database queries."*
+   - Tags: `["databases", "indexing", "test-6d3-5d7675b5"]`
+   - Embedding verification: 384 finite numeric floats, model `sentence-transformers/all-MiniLM-L6-v2`.
+
+### Query Categories Tested & Observed Live Results:
+
+| # | Query Category | Query String | Rank 1 Title | Rank 1 Score | Expected Match | Result |
+| :- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1** | Closely matching Note 1 | *"Orbital mechanics and satellite trajectories"* | Note 1 (*Orbital Mechanics...*) | `0.842941` | Note 1 | **PASS** (Clear separation: Note 2 score `0.514885`, Note 3 score `0.494934`) |
+| **2** | Paraphrased Note 1 | *"Keeping satellites on course in space"* | Note 1 (*Orbital Mechanics...*) | `0.728458` | Note 1 | **PASS** (Clear separation: Note 2 score `0.512492`, Note 3 score `0.489841`) |
+| **3** | Botany / soil matching Note 2 | *"Plant roots obtaining water from soil"* | Note 2 (*Plant Root Architecture...*) | `0.828912` | Note 2 | **PASS** (Clear separation: Note 1 score `0.506615`, Note 3 score `0.468635`) |
+| **4** | Database matching Note 3 | *"Speeding up database lookups"* | Note 3 (*Database Indexing...*) | `0.743207` | Note 3 | **PASS** (Clear separation: Note 1 score `0.516626`, Note 2 score `0.466987`) |
+| **5** | Unrelated topic | *"Renaissance oil painting techniques and pigments"* | Note 3 (*Database Indexing...*) | `0.539252` | Nearest neighbor | **PASS** (All scores low: `0.539252`, `0.476900`, `0.447430`; no false confidence) |
+
+### Payload Safety Verification:
+- Internal `embedding` vector (384 floats) was strictly **omitted** from all API response payloads.
+- Internal `embedding_model` identifier was strictly **omitted** from all API response payloads.
+- All returned `score` fields were finite floating-point values representing relative similarity ranking signals (`vectorSearchScore`).
+
+### Cleanup & Baseline Restoration:
+- Targeted deletion executed via `DELETE /api/notes/{id}` for exactly the 3 recorded test IDs (`6acdd563a481632cbe31cda7`, `6acdd563a481632cbe31cda8`, `6acdd563a481632cbe31cda9`).
+- Each note verified as non-existent in MongoDB following deletion.
+- Final collection document count: **0** (strictly returned to baseline count of 0).
+- Secondary indexes: All 5 indexes remained intact.
+
+### Architectural & Operational Insights:
+- **Change Stream Indexing Latency**: Observed ~3–6 seconds between document insertion in MongoDB and Lucene/Atlas Search ingestion by the background mongot process. Applications performing immediate vector search following note creation must account for this asynchronous ingestion model.
+- **Score Semantics**: Vector search scores reflect approximate cosine similarity ranking signals rather than calibrated probabilities; unrelated queries still retrieve nearest neighbors, confirming why the API must project the score transparently to client callers.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Live Atlas vector search query validation / smoke tests (Milestone 6D.3).
-- [NOT IMPLEMENTED] Live note insertion and embedding backfill on Atlas (Milestone 6D.4).
+- [NOT IMPLEMENTED] Live embedding backfill execution on Atlas (Milestone 6D.4).
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
@@ -356,7 +413,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 6D.3 / 6D.4**: Live Atlas Vector Search Smoke Test & Backfill Verification
-  - Focus: Seeding test notes, verifying live `$vectorSearch` similarity retrieval via `/api/search/semantic`, testing backfill execution, and cleaning up test documents.
+- **Milestone 6D.4**: Live Atlas Embedding Backfill Verification
+  - Focus: Validating `scripts/backfill_embeddings.py` on live Atlas (seeding notes with missing embeddings, running idempotent batch backfill, verifying concurrency protection, and cleaning up test documents).
   - Required before starting: Explicit user approval to proceed.
 
