@@ -13,9 +13,9 @@ services:
       - key: APP_ENV
         value: production
       - key: APP_MODE
-        value: demo
+        value: authenticated
       - key: DEMO_MODE
-        value: "true"
+        value: "false"
       - key: EMBEDDING_MODEL
         value: sentence-transformers/all-MiniLM-L6-v2
       - key: MONGODB_URI

@@ -38,9 +38,9 @@ def test_render_yaml_structure_and_constraints() -> None:
     assert "APP_ENV" in env_vars
     assert env_vars["APP_ENV"] == "production"
     assert "APP_MODE" in env_vars
-    assert env_vars["APP_MODE"] == "demo"
+    assert env_vars["APP_MODE"] == "authenticated"
     assert "DEMO_MODE" in env_vars
-    assert env_vars["DEMO_MODE"] == "true"
+    assert env_vars["DEMO_MODE"] == "false"
     assert "EMBEDDING_MODEL" in env_vars
     assert env_vars["EMBEDDING_MODEL"] == "sentence-transformers/all-MiniLM-L6-v2"
     assert "MONGODB_URI" in env_vars
