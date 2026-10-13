@@ -128,6 +128,7 @@
       searchMode: "text", // 'text' | 'semantic'
       searchQuery: "",
       tagFilter: "",
+      typeFilter: "",
       skip: 0,
       limit: 20,
       notes: [],
@@ -160,8 +161,10 @@
     var notesErrorDesc = document.getElementById("notes-error-desc");
     var btnRetryNotes = document.getElementById("btn-retry-notes");
     var notesEmpty = document.getElementById("notes-empty");
+    var notesEmptyTitle = document.getElementById("notes-empty-title");
     var notesEmptyDesc = document.getElementById("notes-empty-desc");
     var btnEmptyCreate = document.getElementById("btn-empty-create");
+    var emptyQuickstartGuide = document.getElementById("empty-quickstart-guide");
 
     var paginationControls = document.getElementById("pagination-controls");
     var btnPrevPage = document.getElementById("btn-prev-page");
@@ -584,8 +587,10 @@
         if (!trimmedQuery) {
           notesLoading.style.display = "none";
           notesEmpty.style.display = "flex";
-          notesEmptyDesc.textContent = "Enter a search query above to query notes using Atlas Vector Search ($vectorSearch).";
+          if (notesEmptyTitle) notesEmptyTitle.textContent = "Recall What You Remember";
+          notesEmptyDesc.textContent = "Search your personal memories by concept, meaning, and emotional context in your own words (e.g. 'morning coffee in the fog', 'learning python generators', 'early morning run'). Click any suggestion chip above or type in the search bar.";
           btnEmptyCreate.style.display = "none";
+          if (emptyQuickstartGuide) emptyQuickstartGuide.style.display = "none";
           return;
         }
 
@@ -610,8 +615,10 @@
             state.notes = data;
             if (!Array.isArray(data) || data.length === 0) {
               notesEmpty.style.display = "flex";
-              notesEmptyDesc.textContent = 'No semantically matching notes found for "' + trimmedQuery + '".';
+              if (notesEmptyTitle) notesEmptyTitle.textContent = "No Memories Recalled";
+              notesEmptyDesc.textContent = 'No memories conceptually matched "' + trimmedQuery + '". Try describing the moment with different terms, or capture a new entry.';
               btnEmptyCreate.style.display = "inline-flex";
+              if (emptyQuickstartGuide) emptyQuickstartGuide.style.display = "none";
             } else {
               notesGrid.style.display = "grid";
               renderNotesGrid(data, true);
@@ -622,7 +629,11 @@
             if (currentRequestId !== state.activeRequestId) return;
             notesLoading.style.display = "none";
             notesError.style.display = "flex";
-            notesErrorDesc.textContent = err.message || "Failed to execute semantic vector search.";
+            if (err && err.message && (err.message.indexOf("503") !== -1 || err.message.indexOf("building") !== -1 || err.message.indexOf("unavailable") !== -1)) {
+              notesErrorDesc.textContent = "Atlas Vector Search index is currently synchronizing or unavailable. Switch to Text Search above to find memories by keyword in the meantime.";
+            } else {
+              notesErrorDesc.textContent = err.message || "Failed to execute semantic vector search.";
+            }
             showToast(err.message, "error");
           });
         return;
@@ -638,6 +649,9 @@
       }
       if (state.tagFilter.trim()) {
         params.push("tags=" + encodeURIComponent(state.tagFilter.trim()));
+      }
+      if (state.typeFilter && state.typeFilter.trim()) {
+        params.push("type=" + encodeURIComponent(state.typeFilter.trim()));
       }
 
       var notesUrl = "/api/notes?" + params.join("&");
@@ -664,7 +678,7 @@
               // Pagination beyond available results: preserve accessible previous navigation
               notesEmpty.style.display = "flex";
               var currentPageNum = Math.floor(state.skip / state.limit) + 1;
-              notesEmptyDesc.textContent = "No research observations found on Page " + currentPageNum + ". You have navigated past the last available note.";
+              notesEmptyDesc.textContent = "No memories found on Page " + currentPageNum + ". You have navigated past the last available note.";
               btnEmptyCreate.style.display = "none";
               paginationControls.style.display = "flex";
               pageIndicator.textContent = "Page " + currentPageNum;
@@ -672,12 +686,17 @@
               btnNextPage.disabled = true;
             } else {
               notesEmpty.style.display = "flex";
-              if (state.searchQuery.trim() || state.tagFilter.trim()) {
-                notesEmptyDesc.textContent = "No research notes match the active filter or search criteria.";
+              if (state.searchQuery.trim() || state.tagFilter.trim() || state.typeFilter) {
+                if (notesEmptyTitle) notesEmptyTitle.textContent = "No Memories Matched";
+                notesEmptyDesc.textContent = "No memories match the active filter or search criteria. Try clearing filters or searching with broader keywords.";
+                btnEmptyCreate.style.display = "inline-flex";
+                if (emptyQuickstartGuide) emptyQuickstartGuide.style.display = "none";
               } else {
-                notesEmptyDesc.textContent = "The notes repository is currently empty. Create your first field observation below.";
+                if (notesEmptyTitle) notesEmptyTitle.textContent = "Welcome to Fieldnote";
+                notesEmptyDesc.textContent = "Your personal archive is ready. Fieldnote helps you remember what you experience, learn, and discover so you can easily find it later. Begin by capturing your first memory or reflection.";
+                btnEmptyCreate.style.display = "inline-flex";
+                if (emptyQuickstartGuide) emptyQuickstartGuide.style.display = "block";
               }
-              btnEmptyCreate.style.display = "inline-flex";
               paginationControls.style.display = "none";
             }
           } else {
@@ -701,20 +720,29 @@
       state.searchMode = newMode;
       state.skip = 0;
 
+      var textExplainer = document.getElementById("text-mode-explainer");
+      var semanticExplainer = document.getElementById("semantic-mode-explainer");
+      if (textExplainer && semanticExplainer) {
+        textExplainer.style.display = newMode === "text" ? "block" : "none";
+        semanticExplainer.style.display = newMode === "semantic" ? "block" : "none";
+      }
+
       if (newMode === "semantic") {
         modeSemanticBtn.classList.add("active");
         modeSemanticBtn.setAttribute("aria-selected", "true");
         modeTextBtn.classList.remove("active");
         modeTextBtn.setAttribute("aria-selected", "false");
         tagFilterSection.style.display = "none"; // Semantic search does not use tag query params
-        searchInput.placeholder = "Enter natural language query for Atlas Vector Search...";
+        var typeFilterSec = document.getElementById("type-filter-section");
+        if (typeFilterSec) typeFilterSec.style.display = "none";
+        searchInput.placeholder = "Enter a thought, concept, or memory to recall...";
       } else {
         modeTextBtn.classList.add("active");
         modeTextBtn.setAttribute("aria-selected", "true");
         modeSemanticBtn.classList.remove("active");
         modeSemanticBtn.setAttribute("aria-selected", "false");
         tagFilterSection.style.display = "block";
-        searchInput.placeholder = "Search research notes (e.g., 'soil moisture', 'satellite trajectory')...";
+        searchInput.placeholder = "Search your memories (e.g. 'morning walk in autumn', 'ideas for side projects')...";
       }
 
       loadNotes();
@@ -808,6 +836,11 @@
       noteModalTitle.textContent = "Capture Memory";
       var noteTypeSelect = document.getElementById("note-type-select");
       if (noteTypeSelect) noteTypeSelect.value = "memory";
+      var btnEditEvidence = document.getElementById("btn-edit-open-evidence");
+      if (btnEditEvidence) {
+        btnEditEvidence.style.display = "none";
+        btnEditEvidence.onclick = null;
+      }
       modalErrorAlert.style.display = "none";
       modalErrorAlert.textContent = "";
       openDialog(noteModal, noteModalBackdrop, noteTitleInput);
@@ -829,6 +862,14 @@
           var noteTypeSelect = document.getElementById("note-type-select");
           if (noteTypeSelect) noteTypeSelect.value = note.type || "memory";
           noteModalTitle.textContent = "Edit Memory";
+          var btnEditEvidence = document.getElementById("btn-edit-open-evidence");
+          if (btnEditEvidence) {
+            btnEditEvidence.style.display = "inline-flex";
+            btnEditEvidence.onclick = function () {
+              closeDialog(noteModal, noteModalBackdrop);
+              openEvidenceModal(note.id, note.title, btnEditEvidence);
+            };
+          }
           openDialog(noteModal, noteModalBackdrop, noteTitleInput);
         })
         .catch(function (err) {
@@ -1367,6 +1408,9 @@
     var navTabs = document.querySelectorAll(".memory-nav-tab");
     var recallPrompts = document.getElementById("recall-prompts-section");
     var tagFilterSec = document.getElementById("tag-filter-section");
+    var typeFilterSec = document.getElementById("type-filter-section");
+    var viewIntroBadge = document.getElementById("view-intro-badge");
+    var viewIntroText = document.getElementById("view-intro-text");
 
     function setView(viewName) {
       navTabs.forEach(function (tab) {
@@ -1375,25 +1419,46 @@
         tab.setAttribute("aria-selected", isCurrent ? "true" : "false");
       });
 
+      // Synchronize header navigation links (desktop and mobile drawer)
+      var headerLinks = document.querySelectorAll(".nav-link, .mobile-nav-link");
+      headerLinks.forEach(function (link) {
+        var href = link.getAttribute("href") || "";
+        if (href.indexOf("#") !== -1) {
+          var target = href.split("#")[1];
+          if (target) {
+            link.classList.toggle("active", target === viewName);
+          }
+        }
+      });
+
       if (viewName === "timeline") {
+        if (viewIntroBadge) viewIntroBadge.textContent = "Timeline";
+        if (viewIntroText) viewIntroText.textContent = "Chronological stream of your experiences, reflections, and insights.";
         if (recallPrompts) recallPrompts.style.display = "none";
         if (tagFilterSec) tagFilterSec.style.display = "none";
+        if (typeFilterSec) typeFilterSec.style.display = "none";
         if (state.searchMode !== "text") {
           setSearchMode("text");
         }
-        if (state.searchQuery || state.tagFilter) {
+        if (state.searchQuery || state.tagFilter || state.typeFilter) {
           state.searchQuery = "";
           searchInput.value = "";
           state.tagFilter = "";
           tagFilterInput.value = "";
+          state.typeFilter = "";
+          var allTypeChips = document.querySelectorAll(".type-chip");
+          allTypeChips.forEach(function (c) { c.classList.toggle("active", !c.getAttribute("data-type")); });
           btnClearTags.style.display = "none";
           btnSearchClear.style.display = "none";
           state.skip = 0;
           loadNotes();
         }
       } else if (viewName === "recall") {
+        if (viewIntroBadge) viewIntroBadge.textContent = "Recall";
+        if (viewIntroText) viewIntroText.textContent = "Retrieve personal memories by conceptual meaning, feelings, or exact keyword matches.";
         if (recallPrompts) recallPrompts.style.display = "block";
         if (tagFilterSec) tagFilterSec.style.display = "none";
+        if (typeFilterSec) typeFilterSec.style.display = "none";
         setSearchMode("semantic");
         searchInput.focus();
       } else if (viewName === "capture") {
@@ -1401,14 +1466,48 @@
         setView("timeline");
         return;
       } else if (viewName === "archive") {
+        if (viewIntroBadge) viewIntroBadge.textContent = "Archive";
+        if (viewIntroText) viewIntroText.textContent = "Browse your historical memory archive organized by topics, tags, and entry classifications.";
         if (recallPrompts) recallPrompts.style.display = "none";
         if (tagFilterSec) tagFilterSec.style.display = "block";
+        if (typeFilterSec) typeFilterSec.style.display = "block";
+        if (state.searchMode !== "text") {
+          setSearchMode("text");
+        }
       }
     }
 
     navTabs.forEach(function (tab) {
       tab.addEventListener("click", function () {
         setView(tab.getAttribute("data-view"));
+      });
+    });
+
+    // Directly bind header links to setView for instant switching
+    var headerViewLinks = document.querySelectorAll(
+      "#nav-link-capture, #nav-link-timeline, #nav-link-recall, #nav-link-archive, #mobile-nav-capture, #mobile-nav-timeline, #mobile-nav-recall, #mobile-nav-archive"
+    );
+    headerViewLinks.forEach(function (link) {
+      link.addEventListener("click", function () {
+        var href = link.getAttribute("href") || "";
+        if (href.indexOf("#") !== -1) {
+          var target = href.split("#")[1];
+          if (target) {
+            setView(target);
+          }
+        }
+      });
+    });
+
+    // Type filter chips listener in Archive view
+    var typeChips = document.querySelectorAll(".type-chip");
+    typeChips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        typeChips.forEach(function (c) { c.classList.remove("active"); });
+        chip.classList.add("active");
+        state.typeFilter = chip.getAttribute("data-type") || "";
+        state.skip = 0;
+        loadNotes();
       });
     });
 
@@ -1426,6 +1525,7 @@
       // Default to Timeline clean view
       if (recallPrompts) recallPrompts.style.display = "none";
       if (tagFilterSec) tagFilterSec.style.display = "none";
+      if (typeFilterSec) typeFilterSec.style.display = "none";
     }
 
     // Natural Language Recall Prompt Suggestion Chips
@@ -1820,8 +1920,8 @@
             if (attachmentsEmpty) attachmentsEmpty.style.display = "flex";
             if (attachmentsEmptyDesc) {
               attachmentsEmptyDesc.textContent = includeZero
-                ? "No research notes exist in the database."
-                : "No research notes currently have evidence attachments.";
+                ? "No memories exist in your personal journal yet."
+                : "No memories currently have photos or evidence attached.";
             }
           } else {
             renderEvidenceDistribution(attachments);
@@ -1839,6 +1939,12 @@
     }
 
     function loadAllAnalytics() {
+      if (btnRefresh) {
+        btnRefresh.classList.add("is-refreshing");
+        setTimeout(function () {
+          btnRefresh.classList.remove("is-refreshing");
+        }, 700);
+      }
       // Use Promise.allSettled so individual failures do not disrupt other sections
       if (typeof Promise.allSettled === "function") {
         Promise.allSettled([

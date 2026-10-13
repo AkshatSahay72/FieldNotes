@@ -96,7 +96,28 @@ def init_db_indexes(db: Optional[Database]) -> None:
             [("note_id", ASCENDING)],
             name="idx_attachments_note_id",
         )
-        logger.info("MongoDB indexes on notes and attachments created/verified.")
+        # First-party authentication and session indexes
+        if "users" in db:
+            db["users"].create_index(
+                [("email", ASCENDING)],
+                unique=True,
+                name="idx_users_email_unique",
+            )
+        if "sessions" in db:
+            db["sessions"].create_index(
+                [("session_id", ASCENDING)],
+                unique=True,
+                name="idx_sessions_session_id_unique",
+            )
+            db["sessions"].create_index(
+                [("user_id", ASCENDING)],
+                name="idx_sessions_user_id",
+            )
+            db["sessions"].create_index(
+                [("expires_at", ASCENDING)],
+                name="idx_sessions_expires_at",
+            )
+        logger.info("MongoDB indexes on notes, attachments, users, and sessions created/verified.")
     except Exception as err:
         logger.warning("Could not initialize database indexes: %s", type(err).__name__)
 

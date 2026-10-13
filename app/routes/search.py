@@ -1,11 +1,13 @@
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pymongo.database import Database
 from pymongo.errors import OperationFailure, PyMongoError
 
+from bson import ObjectId
 from app.db import get_database
-from app.schemas import SemanticSearchResult
+from app.schemas import SemanticSearchResult, UserResponse
+from app.routes.auth import get_optional_current_user
 from app.services.embedding import (
     EmbeddingService,
     EmbeddingServiceError,
@@ -71,6 +73,7 @@ def semantic_search_notes(
     ),
     db: Database = Depends(get_database),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> List[SemanticSearchResult]:
     """Search research notes by semantic similarity using MongoDB Atlas Vector Search.
     
@@ -78,8 +81,8 @@ def semantic_search_notes(
     EmbeddingService (sentence-transformers/all-MiniLM-L6-v2) and executes an aggregation
     pipeline using $vectorSearch on the 'notes' collection.
     
-    The returned 'score' is calculated from $meta: 'vectorSearchScore' and represents
-    a relative similarity ranking signal, not a probability or absolute confidence measure.
+    Candidate results are strictly validated and filtered by authenticated owner
+    to prevent cross-tenant vector search leakage.
     """
     trimmed_q = q.strip()
     if not trimmed_q:
@@ -116,6 +119,7 @@ def semantic_search_notes(
                 "title": 1,
                 "content": 1,
                 "tags": 1,
+                "user_id": 1,
                 "created_at": 1,
                 "updated_at": 1,
                 "score": {"$meta": "vectorSearchScore"},
@@ -123,11 +127,22 @@ def semantic_search_notes(
         },
     ]
 
-    # 3. Execute aggregation pipeline on notes collection
+    expected_owner_id = ObjectId(current_user.id) if current_user else None
+
+    # 3. Execute aggregation pipeline on notes collection with strict ownership validation
     try:
         cursor = db["notes"].aggregate(pipeline)
         results: List[SemanticSearchResult] = []
         for doc in cursor:
+            doc_user_id = doc.get("user_id")
+            # Strict owner validation prevents cross-tenant vector leakage
+            if expected_owner_id is not None:
+                if doc_user_id != expected_owner_id:
+                    continue
+            else:
+                if doc_user_id is not None:
+                    continue
+
             results.append(
                 SemanticSearchResult(
                     id=str(doc["_id"]),
@@ -139,6 +154,8 @@ def semantic_search_notes(
                     score=float(doc.get("score", 0.0)),
                 )
             )
+            if len(results) >= limit:
+                break
         return results
     except OperationFailure as err:
         if is_vector_index_unavailable_error(err):

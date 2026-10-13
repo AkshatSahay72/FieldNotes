@@ -34,9 +34,9 @@ def test_dashboard_renders_html_with_metadata(client: TestClient):
     assert "text/html" in response.headers.get("content-type", "")
 
     html = response.text
-    assert "<title>Fieldnote — Research Dashboard</title>" in html
+    assert "<title>Fieldnote — Personal Memory Journal</title>" in html
     assert 'name="description"' in html
-    assert 'content="Explore, search, and manage scientific research notes' in html
+    assert 'content="Capture, recall, and revisit what you experience, learn, and discover' in html
     assert 'name="viewport"' in html
     assert 'content="width=device-width, initial-scale=1.0"' in html
 
@@ -573,7 +573,42 @@ def test_analytics_css_styles(client: TestClient):
     assert ".chart-bar-title-truncate" in css
     assert ".tag-pill-label" in css
 
-    # Theme fill tokens
     assert ".fill-primary" in css
     assert ".fill-accent" in css
     assert ".fill-secondary" in css
+
+
+def test_demo_mode_banner_rendered_conditionally():
+    """Verify demo notice banner is rendered when DEMO_MODE is True and omitted when False."""
+    from app.config import Settings, get_settings
+
+    demo_settings = Settings(
+        MONGODB_URI="mongodb://localhost:27017",
+        DATABASE_NAME="fieldnote_demo",
+        DEMO_MODE=True,
+        APP_ENV="testing",
+        _env_file=None,
+    )
+    normal_settings = Settings(
+        MONGODB_URI="mongodb://localhost:27017",
+        DATABASE_NAME="fieldnote_private",
+        APP_MODE="authenticated",
+        DEMO_MODE=False,
+        APP_ENV="testing",
+        _env_file=None,
+    )
+
+    app_demo = create_app()
+    app_demo.dependency_overrides[get_settings] = lambda: demo_settings
+    with TestClient(app_demo) as demo_client:
+        res = demo_client.get("/")
+        assert res.status_code == 200
+        assert "demo-banner" in res.text
+        assert "Public demonstration environment" in res.text
+
+    app_normal = create_app()
+    app_normal.dependency_overrides[get_settings] = lambda: normal_settings
+    with TestClient(app_normal) as normal_client:
+        res_normal = normal_client.get("/")
+        assert res_normal.status_code == 200
+        assert "demo-banner" not in res_normal.text

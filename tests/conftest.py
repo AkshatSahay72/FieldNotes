@@ -21,6 +21,12 @@ from app.config import get_settings
 # Clear settings cache so initial test imports use the isolated test configuration
 get_settings.cache_clear()
 
+# Eagerly initialize sentence_transformers to prevent late Windows C-extension access violations
+try:
+    import sentence_transformers  # noqa: F401
+except ImportError:
+    pass
+
 
 @pytest.fixture(autouse=True)
 def ensure_isolated_test_settings():

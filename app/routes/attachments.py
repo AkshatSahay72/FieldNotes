@@ -13,7 +13,8 @@ from pymongo.errors import PyMongoError
 
 from app.config import check_demo_mode
 from app.db import get_database, get_gridfs
-from app.schemas import AttachmentResponse
+from app.schemas import AttachmentResponse, UserResponse
+from app.routes.auth import get_optional_current_user, enforce_write_access
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,13 @@ def attachment_doc_to_response(doc: dict) -> AttachmentResponse:
     )
 
 
-def ensure_note_exists(note_oid: ObjectId, db: Database) -> dict:
-    """Check that parent note exists; raises 404 Not Found if missing."""
+def ensure_note_exists(
+    note_oid: ObjectId,
+    db: Database,
+    current_user: Optional[UserResponse] = None,
+) -> dict:
+    """Check that parent note exists; raises 404 Not Found if missing or unauthorized."""
+    owner_id = ObjectId(current_user.id) if current_user else None
     try:
         note = db["notes"].find_one({"_id": note_oid})
     except PyMongoError as err:
@@ -121,6 +127,14 @@ def ensure_note_exists(note_oid: ObjectId, db: Database) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Note with ID '{note_oid}' not found",
         )
+
+    # Public synthetic demo records can be viewed; private notes require matching owner
+    if not note.get("is_demo", False) and note.get("user_id") != owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_oid}' not found",
+        )
+
     return note
 
 
@@ -129,7 +143,7 @@ def ensure_note_exists(note_oid: ObjectId, db: Database) -> dict:
     response_model=AttachmentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload image attachment for a note",
-    dependencies=[Depends(check_demo_mode)],
+    dependencies=[Depends(enforce_write_access)],
 )
 async def upload_attachment(
     note_id: str,
@@ -138,10 +152,18 @@ async def upload_attachment(
     description: Optional[str] = Form(None, description="Optional description of evidence"),
     db: Database = Depends(get_database),
     fs: GridFS = Depends(get_gridfs),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> AttachmentResponse:
-    """Upload and link an image attachment to an existing research note using GridFS."""
+    """Upload and link an image attachment to an existing research note using GridFS with user ownership."""
     note_oid = validate_object_id(note_id, "note ID")
-    ensure_note_exists(note_oid, db)
+    parent_note = ensure_note_exists(note_oid, db, current_user)
+    if parent_note.get("is_demo", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic demo records are read-only",
+        )
+
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     # Enforce bounded reading up to MAX_FILE_SIZE
     file_bytes = bytearray()
@@ -183,6 +205,7 @@ async def upload_attachment(
         # Store metadata document in attachments collection
         att_doc = {
             "note_id": note_oid,
+            "user_id": owner_id,
             "file_id": file_id,
             "filename": sanitized_filename,
             "content_type": detected_mime,
@@ -216,14 +239,18 @@ async def upload_attachment(
 def list_attachments(
     note_id: str,
     db: Database = Depends(get_database),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> List[AttachmentResponse]:
-    """Retrieve metadata for all attachments linked to the specified note."""
+    """Retrieve metadata for all attachments linked to the specified note within owner scope."""
     note_oid = validate_object_id(note_id, "note ID")
-    ensure_note_exists(note_oid, db)
+    parent_note = ensure_note_exists(note_oid, db, current_user)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         cursor = db["attachments"].find({"note_id": note_oid}).sort("created_at", 1)
-        return [attachment_doc_to_response(doc) for doc in cursor]
+        if parent_note.get("is_demo", False):
+            return [attachment_doc_to_response(doc) for doc in cursor]
+        return [attachment_doc_to_response(doc) for doc in cursor if doc.get("user_id") == owner_id]
     except PyMongoError as err:
         logger.error("Failed to list attachments for note %s: %s", note_id, type(err).__name__)
         raise HTTPException(
@@ -241,11 +268,13 @@ def get_attachment(
     note_id: str,
     attachment_id: str,
     db: Database = Depends(get_database),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> AttachmentResponse:
-    """Retrieve metadata for a specific attachment belonging to a note."""
+    """Retrieve metadata for a specific attachment belonging to a note within owner scope."""
     note_oid = validate_object_id(note_id, "note ID")
     att_oid = validate_object_id(attachment_id, "attachment ID")
-    ensure_note_exists(note_oid, db)
+    parent_note = ensure_note_exists(note_oid, db, current_user)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         doc = db["attachments"].find_one({"_id": att_oid, "note_id": note_oid})
@@ -257,6 +286,12 @@ def get_attachment(
         )
 
     if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",
+        )
+
+    if not doc.get("is_demo", False) and doc.get("user_id") != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",
@@ -274,11 +309,13 @@ def download_attachment(
     attachment_id: str,
     db: Database = Depends(get_database),
     fs: GridFS = Depends(get_gridfs),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> StreamingResponse:
-    """Stream raw image binary data directly from GridFS with validated Content-Type."""
+    """Stream raw image binary data directly from GridFS with validated Content-Type and owner scoping."""
     note_oid = validate_object_id(note_id, "note ID")
     att_oid = validate_object_id(attachment_id, "attachment ID")
-    ensure_note_exists(note_oid, db)
+    parent_note = ensure_note_exists(note_oid, db, current_user)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         doc = db["attachments"].find_one({"_id": att_oid, "note_id": note_oid})
@@ -290,6 +327,12 @@ def download_attachment(
         )
 
     if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",
+        )
+
+    if not doc.get("is_demo", False) and doc.get("user_id") != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",
@@ -329,18 +372,26 @@ def download_attachment(
     "/{note_id}/attachments/{attachment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a single attachment",
-    dependencies=[Depends(check_demo_mode)],
+    dependencies=[Depends(enforce_write_access)],
 )
 def delete_attachment(
     note_id: str,
     attachment_id: str,
     db: Database = Depends(get_database),
     fs: GridFS = Depends(get_gridfs),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> Response:
-    """Delete binary chunks from GridFS and metadata record from attachments collection."""
+    """Delete binary chunks from GridFS and metadata record from attachments collection within owner scope."""
     note_oid = validate_object_id(note_id, "note ID")
     att_oid = validate_object_id(attachment_id, "attachment ID")
-    ensure_note_exists(note_oid, db)
+    parent_note = ensure_note_exists(note_oid, db, current_user)
+    if parent_note.get("is_demo", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic demo records are read-only",
+        )
+
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         doc = db["attachments"].find_one({"_id": att_oid, "note_id": note_oid})
@@ -352,6 +403,18 @@ def delete_attachment(
         )
 
     if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",
+        )
+
+    if doc.get("is_demo", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic demo records are read-only",
+        )
+
+    if doc.get("user_id") != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Attachment with ID '{attachment_id}' not found for note '{note_id}'",

@@ -37,6 +37,8 @@ def test_render_yaml_structure_and_constraints() -> None:
     env_vars = {item["key"]: item.get("value") for item in web_svc.get("envVars", [])}
     assert "APP_ENV" in env_vars
     assert env_vars["APP_ENV"] == "production"
+    assert "APP_MODE" in env_vars
+    assert env_vars["APP_MODE"] == "demo"
     assert "DEMO_MODE" in env_vars
     assert env_vars["DEMO_MODE"] == "true"
     assert "EMBEDDING_MODEL" in env_vars

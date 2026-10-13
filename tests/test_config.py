@@ -49,3 +49,138 @@ def test_settings_empty_mongodb_uri_raises_validation_error(monkeypatch):
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_demo_mode_without_explicit_database_fails(monkeypatch):
+    """Test that enabling DEMO_MODE without explicitly setting DATABASE_NAME fails closed."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.delenv("DATABASE_NAME", raising=False)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "dedicated demo database must be explicitly configured" in str(exc_info.value)
+
+
+def test_demo_mode_targeting_default_database_fails(monkeypatch):
+    """Test that DEMO_MODE targeting default 'fieldnote_db' fails closed."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_db")
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "cannot target the default development database" in str(exc_info.value)
+
+
+def test_demo_mode_with_valid_explicit_database_succeeds(monkeypatch):
+    """Test that DEMO_MODE with explicit 'fieldnote_demo' succeeds."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_demo")
+
+    settings = Settings(_env_file=None)
+    assert settings.is_demo_mode is True
+    assert settings.database_name == "fieldnote_demo"
+
+
+def test_authenticated_mode_without_explicit_database_fails(monkeypatch):
+    """Test that authenticated private mode without explicit DATABASE_NAME fails closed."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.delenv("DATABASE_NAME", raising=False)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "DATABASE_NAME must be explicitly configured" in str(exc_info.value)
+
+
+def test_authenticated_mode_targeting_default_database_fails(monkeypatch):
+    """Test that authenticated private mode targeting 'fieldnote_db' fails closed."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_db")
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "cannot target the default development database" in str(exc_info.value)
+
+
+def test_authenticated_mode_targeting_demo_database_fails(monkeypatch):
+    """Test that authenticated private mode targeting 'fieldnote_demo' fails closed."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_demo")
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "cannot target the public demo database" in str(exc_info.value)
+
+
+def test_authenticated_mode_with_valid_explicit_database_succeeds(monkeypatch):
+    """Test that authenticated mode with dedicated database succeeds."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_private")
+
+    settings = Settings(_env_file=None)
+    assert settings.is_demo_mode is False
+    assert settings.requires_authentication_for_writes is True
+    assert settings.database_name == "fieldnote_private"
+
+
+def test_conflicting_authenticated_and_demo_mode_fails(monkeypatch):
+    """Test that setting APP_MODE=authenticated while DEMO_MODE=true raises ValidationError."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_private")
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "Conflicting configuration" in str(exc_info.value)
+
+
+def test_invalid_app_mode_fails(monkeypatch):
+    """Test that unsupported APP_MODE string raises ValidationError."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_MODE", "invalid_cluster_mode")
+
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None)
+    assert "Invalid APP_MODE" in str(exc_info.value)
+
+
+def test_app_mode_aliases_resolve_correctly(monkeypatch):
+    """Test that aliases 'personal' and 'private' map to authenticated mode."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("DATABASE_NAME", "my_private_notes")
+
+    for alias in ["personal", "private"]:
+        monkeypatch.setenv("APP_MODE", alias)
+        settings = Settings(_env_file=None)
+        assert settings.requires_authentication_for_writes is True
+
+    monkeypatch.setenv("APP_MODE", "dev")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_db")
+    settings_dev = Settings(_env_file=None)
+    assert settings_dev.requires_authentication_for_writes is False
+
+
+def test_is_cookie_secure_production_vs_development(monkeypatch):
+    """Test that cookie secure flag defaults to True in production and False in development."""
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_prod")
+    settings_prod = Settings(_env_file=None)
+    assert settings_prod.is_cookie_secure is True
+
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_db")
+    settings_dev = Settings(_env_file=None)
+    assert settings_dev.is_cookie_secure is False
+
+    # Explicit override takes precedence
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "true")
+    settings_override = Settings(_env_file=None)
+    assert settings_override.is_cookie_secure is True

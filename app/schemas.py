@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, EmailStr
 
 
 class HealthResponse(BaseModel):
@@ -237,4 +237,97 @@ class NoteAttachmentSummary(BaseModel):
         ...,
         description="Number of image attachments linked to this note",
         examples=[2],
+    )
+
+
+# ==============================================================================
+# First-Party Authentication & Session Schemas
+# ==============================================================================
+
+class UserRegisterRequest(BaseModel):
+    """Schema for registering a new user account."""
+
+    email: EmailStr = Field(
+        ...,
+        description="User email address (normalized lowercase)",
+        examples=["researcher@example.org"],
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="User password (minimum 8 characters, maximum 128 characters)",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_not_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Password cannot be blank or contain only whitespace.")
+        return v
+
+
+class UserLoginRequest(BaseModel):
+    """Schema for authenticating an existing user."""
+
+    email: EmailStr = Field(
+        ...,
+        description="User email address",
+        examples=["researcher@example.org"],
+    )
+    password: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description="User password",
+    )
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class UserResponse(BaseModel):
+    """Schema for user representation in API responses (never includes password hash)."""
+
+    id: str = Field(
+        ...,
+        description="Unique 24-character hex ID of the user document",
+        examples=["507f1f77bcf86cd799439011"],
+    )
+    email: str = Field(
+        ...,
+        description="User email address",
+        examples=["researcher@example.org"],
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Account creation timestamp (UTC)",
+    )
+    is_active: bool = Field(
+        default=True,
+        description="Whether user account is active",
+    )
+
+
+class SessionResponse(BaseModel):
+    """Schema for active session response including user details and CSRF token."""
+
+    user: UserResponse = Field(
+        ...,
+        description="Authenticated user details",
+    )
+    csrf_token: str = Field(
+        ...,
+        description="Cryptographically secure CSRF token for state-changing requests",
+    )
+    expires_at: datetime = Field(
+        ...,
+        description="Session expiration timestamp (UTC)",
     )

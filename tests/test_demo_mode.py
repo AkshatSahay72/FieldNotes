@@ -449,13 +449,23 @@ def test_seed_demo_data_idempotency(fake_db, fake_fs, fake_embedding):
         embedding_service=fake_embedding,
         dry_run=False,
     )
-    assert counts_run1["notes_created"] == 6
+    assert counts_run1["notes_created"] == 10
     assert counts_run1["notes_skipped"] == 0
-    assert counts_run1["attachments_created"] == 3
+    assert counts_run1["attachments_created"] == 4
     assert counts_run1["attachments_skipped"] == 0
 
-    assert len(fake_db["notes"].docs) == 6
-    assert len(fake_db["attachments"].docs) == 3
+    assert len(fake_db["notes"].docs) == 10
+    assert len(fake_db["attachments"].docs) == 4
+
+    # Verify all seeded records are marked as public demo
+    for doc in fake_db["notes"].docs.values():
+        assert doc.get("is_demo") is True
+        assert doc.get("user_id") is None
+        assert doc.get("type") in ("journal", "memory", "research", "idea", "learning")
+
+    for att in fake_db["attachments"].docs.values():
+        assert att.get("is_demo") is True
+        assert att.get("user_id") is None
 
     # Run 2: second execution must skip everything and create zero duplicates
     counts_run2 = seed_demo_data(
@@ -465,13 +475,13 @@ def test_seed_demo_data_idempotency(fake_db, fake_fs, fake_embedding):
         dry_run=False,
     )
     assert counts_run2["notes_created"] == 0
-    assert counts_run2["notes_skipped"] == 6
+    assert counts_run2["notes_skipped"] == 10
     assert counts_run2["attachments_created"] == 0
-    assert counts_run2["attachments_skipped"] == 3
+    assert counts_run2["attachments_skipped"] == 4
 
     # Total documents unchanged
-    assert len(fake_db["notes"].docs) == 6
-    assert len(fake_db["attachments"].docs) == 3
+    assert len(fake_db["notes"].docs) == 10
+    assert len(fake_db["attachments"].docs) == 4
 
 
 def test_seed_demo_data_dry_run(fake_db, fake_fs):
@@ -480,8 +490,8 @@ def test_seed_demo_data_dry_run(fake_db, fake_fs):
         fs=fake_fs,
         dry_run=True,
     )
-    assert counts["notes_created"] == 6
-    assert counts["attachments_created"] == 3
+    assert counts["notes_created"] == 10
+    assert counts["attachments_created"] == 4
     # Dry-run must make zero actual writes
     assert len(fake_db["notes"].docs) == 0
     assert len(fake_db["attachments"].docs) == 0
@@ -494,6 +504,24 @@ def test_seed_demo_data_safety_abort_on_default_db(monkeypatch):
 
     exit_code = seed_main()
     assert exit_code == 1, "Seed script must abort when targeting default dev database without explicit flag"
+
+
+def test_seed_demo_data_refuses_personal_databases(monkeypatch):
+    """Seed script must unconditionally refuse to seed a personal user's database."""
+    for personal_db in ["fieldnote_private", "fieldnote_personal", "fieldnote_private_prod"]:
+        test_args = ["seed_demo_data.py", "--database-name", personal_db]
+        monkeypatch.setattr("sys.argv", test_args)
+        exit_code = seed_main()
+        assert exit_code == 1, f"Seed script must refuse personal database '{personal_db}'"
+
+
+def test_seed_demo_data_refuses_omitted_target_database(monkeypatch):
+    """Seed script must refuse to run if target database is omitted without fallback."""
+    monkeypatch.delenv("DATABASE_NAME", raising=False)
+    test_args = ["seed_demo_data.py"]
+    monkeypatch.setattr("sys.argv", test_args)
+    exit_code = seed_main()
+    assert exit_code == 1, "Seed script must refuse execution when target database is omitted"
 
 
 # ===========================================================================

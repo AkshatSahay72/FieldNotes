@@ -27,7 +27,7 @@ def get_dashboard(
         context={
             "active_page": "dashboard",
             "current_year": datetime.now(timezone.utc).year,
-            "demo_mode": settings.demo_mode,
+            "demo_mode": settings.is_demo_mode,
         },
     )
 
@@ -44,7 +44,7 @@ def get_analytics(
         context={
             "active_page": "analytics",
             "current_year": datetime.now(timezone.utc).year,
-            "demo_mode": settings.demo_mode,
+            "demo_mode": settings.is_demo_mode,
         },
     )
 

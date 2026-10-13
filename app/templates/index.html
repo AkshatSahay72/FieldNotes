@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Fieldnote — Research Dashboard{% endblock %}
-{% block description %}Explore, search, and manage scientific research notes and evidence using MongoDB text and Atlas vector search.{% endblock %}
+{% block title %}Fieldnote — Personal Memory Journal{% endblock %}
+{% block description %}Capture, recall, and revisit what you experience, learn, and discover using MongoDB text search and Atlas vector search.{% endblock %}
 
 {% block content %}
 <div class="dashboard-layout memory-layout">
@@ -21,18 +21,38 @@
   <!-- Primary Memory Navigation Views -->
   <nav class="memory-nav-bar" aria-label="Memory Views">
     <button type="button" id="tab-timeline" class="memory-nav-tab active" data-view="timeline">
-      <span class="tab-icon">⏱</span> Timeline
+      <span class="tab-icon">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      </span>
+      <span>Timeline</span>
     </button>
     <button type="button" id="tab-recall" class="memory-nav-tab" data-view="recall">
-      <span class="tab-icon">✦</span> Recall
+      <span class="tab-icon">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      </span>
+      <span>Recall</span>
     </button>
     <button type="button" id="tab-capture" class="memory-nav-tab" data-view="capture">
-      <span class="tab-icon">✎</span> Capture
+      <span class="tab-icon">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+      </span>
+      <span>Capture</span>
     </button>
     <button type="button" id="tab-archive" class="memory-nav-tab" data-view="archive">
-      <span class="tab-icon">🗂</span> Archive
+      <span class="tab-icon">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line></svg>
+      </span>
+      <span>Archive</span>
     </button>
   </nav>
+
+  <!-- Contextual View Intro Banner -->
+  <aside id="view-intro-bar" class="view-intro-bar" role="region" aria-live="polite">
+    <div class="view-intro-inner">
+      <span id="view-intro-badge" class="badge badge-accent">Timeline</span>
+      <p id="view-intro-text" class="view-intro-text">Chronological stream of your experiences, reflections, and insights.</p>
+    </div>
+  </aside>
 
   <!-- Search & Filter Controls Panel -->
   <section class="card controls-card" aria-label="Search and filter controls">
@@ -47,7 +67,8 @@
         aria-controls="search-form"
         data-mode="text"
       >
-        MongoDB Text Search ($text)
+        <span class="mode-label">Text Search</span>
+        <span class="mode-pill">Keywords</span>
       </button>
       <button
         type="button"
@@ -58,8 +79,19 @@
         aria-controls="search-form"
         data-mode="semantic"
       >
-        Atlas Semantic Vector Search ($vectorSearch)
+        <span class="mode-label">Semantic Recall</span>
+        <span class="mode-pill">Meaning</span>
       </button>
+    </div>
+
+    <!-- Search Capability Explainer -->
+    <div id="search-mode-desc" class="search-mode-desc">
+      <p id="text-mode-explainer" class="mode-explainer-text">
+        <strong>Exact Text Search:</strong> Locates memories containing specific keywords and phrases in titles or content.
+      </p>
+      <p id="semantic-mode-explainer" class="mode-explainer-text" style="display: none;">
+        <strong>Semantic Concept Recall:</strong> Retrieves personal memories by meaning and emotional context using 384-dimensional vector embeddings &mdash; even without exact word matches. (Searches personal indexed entries only &mdash; no external synthesis).
+      </p>
     </div>
 
     <!-- Search Form -->
@@ -70,7 +102,7 @@
           type="search"
           id="search-input"
           class="form-control"
-          placeholder="Search research notes (e.g., 'soil moisture', 'satellite trajectory')..."
+          placeholder="Search your memories (e.g. 'morning walk in autumn', 'ideas for side projects', 'learning rust')..."
           autocomplete="off"
         />
         <button type="submit" id="btn-search-submit" class="btn btn-primary">
@@ -84,7 +116,7 @@
 
     <!-- Natural Language Recall Prompt Suggestion Chips -->
     <div id="recall-prompts-section" class="recall-prompts-section">
-      <span class="recall-prompts-label">Try natural-language recall:</span>
+      <span class="recall-prompts-label">Try natural-language recall prompts:</span>
       <div class="recall-prompt-chips">
         <button type="button" class="recall-prompt-chip" data-query="The idea I had about turning old phones into servers">
           &ldquo;The idea I had about turning old phones into servers&rdquo;
@@ -101,6 +133,19 @@
       </div>
     </div>
 
+    <!-- Type Filter Bar (Available for Archive / Browsing) -->
+    <div id="type-filter-section" class="type-filter-group" style="display: none;">
+      <span class="type-filter-label">Filter by Type:</span>
+      <div class="type-filter-chips">
+        <button type="button" class="type-chip active" data-type="">All Types</button>
+        <button type="button" class="type-chip" data-type="memory">Memory</button>
+        <button type="button" class="type-chip" data-type="journal">Journal</button>
+        <button type="button" class="type-chip" data-type="idea">Idea</button>
+        <button type="button" class="type-chip" data-type="learning">Learning</button>
+        <button type="button" class="type-chip" data-type="research">Research</button>
+      </div>
+    </div>
+
     <!-- Tag Filter Bar (Available for Text / Normal Search) -->
     <div id="tag-filter-section" class="tag-filter-group">
       <label for="tag-filter-input" class="tag-filter-label">Filter by Tags:</label>
@@ -109,7 +154,7 @@
           type="text"
           id="tag-filter-input"
           class="form-control"
-          placeholder="Comma-separated tags (e.g. soil, nitrogen, botany)..."
+          placeholder="Filter by tags (e.g. reflection, ideas, project, books)..."
         />
         <button type="button" id="btn-apply-tags" class="btn btn-secondary">
           Apply Tags
@@ -133,13 +178,13 @@
     <!-- Loading Indicator -->
     <div id="notes-loading" class="state-container" style="display: none;" aria-live="polite">
       <div class="spinner" aria-hidden="true"></div>
-      <p>Loading research notes...</p>
+      <p>Loading your memories...</p>
     </div>
 
     <!-- Error State -->
     <div id="notes-error" class="state-container error-state" style="display: none;" role="alert">
       <div class="error-icon" aria-hidden="true">!</div>
-      <h3 id="notes-error-title">Unable to Load Notes</h3>
+      <h3 id="notes-error-title">Unable to Load Memories</h3>
       <p id="notes-error-desc">An error occurred while contacting the Fieldnote API.</p>
       <button type="button" id="btn-retry-notes" class="btn btn-secondary">Retry</button>
     </div>
@@ -147,16 +192,44 @@
     <!-- Empty State -->
     <div id="notes-empty" class="state-container empty-state" style="display: none;">
       <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
           <polyline points="14 2 14 8 20 8"></polyline>
           <line x1="9" y1="13" x2="15" y2="13"></line>
           <line x1="9" y1="17" x2="13" y2="17"></line>
         </svg>
       </div>
-      <h3>No Research Notes Found</h3>
-      <p id="notes-empty-desc">No research observations match the current filter or search criteria.</p>
-      <button type="button" id="btn-empty-create" class="btn btn-primary">+ Create First Note</button>
+      <h3 id="notes-empty-title">No Memories Found</h3>
+      <p id="notes-empty-desc">No entries match the current filter or search criteria. Start by capturing a memory!</p>
+      <div class="empty-actions">
+        <button type="button" id="btn-empty-create" class="btn btn-primary">+ Capture First Memory</button>
+      </div>
+      <!-- First-Use Quickstart Guide -->
+      <div id="empty-quickstart-guide" class="empty-quickstart-guide" style="display: none;">
+        <div class="quickstart-steps">
+          <div class="quickstart-step">
+            <span class="step-num">1</span>
+            <div>
+              <strong>Capture Freely</strong>
+              <p>Record what you experience, think, or learn today. Add optional tags and image evidence.</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <span class="step-num">2</span>
+            <div>
+              <strong>Browse Timeline</strong>
+              <p>Revisit memories chronologically or filter by category: Memory, Journal, Idea, Learning, or Research.</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <span class="step-num">3</span>
+            <div>
+              <strong>Use Recall</strong>
+              <p>Search memories by meaning and emotional context in your own words &mdash; even without exact word matches.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Notes Cards Grid -->
@@ -200,7 +273,7 @@
   aria-hidden="true"
 >
   <div class="modal-header">
-    <h2 id="note-modal-title">Create Research Note</h2>
+    <h2 id="note-modal-title">Capture Memory</h2>
     <button
       type="button"
       id="btn-close-note-modal"
@@ -266,8 +339,21 @@
         />
         <small class="form-hint">Optional tags for topic filtering and recall.</small>
       </div>
+
+      <!-- Attachment Guidance in Modal -->
+      <div class="form-attachment-hint">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+          <polyline points="21 15 16 10 5 21"></polyline>
+        </svg>
+        <span>Photos &amp; attachments can be added to this memory once saved using the <strong>📷 Evidence</strong> button on the card.</span>
+      </div>
     </div>
     <div class="modal-footer">
+      <button type="button" id="btn-edit-open-evidence" class="btn btn-secondary" style="display: none;">
+        📷 Manage Photos
+      </button>
       <button type="button" id="btn-cancel-note" class="btn btn-secondary">
         Cancel
       </button>
@@ -422,14 +508,14 @@
       <!-- Gallery Empty State -->
       <div id="evidence-empty" class="state-container state-container-sm empty-state" style="display: none;">
         <div class="empty-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <circle cx="8.5" cy="8.5" r="1.5"></circle>
             <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </div>
-        <h4>No Evidence Photos Attached</h4>
-        <p>Use the form above to attach specimen photos, cross-sections, or fieldwork observations.</p>
+        <h4>No Photos or Evidence Attached</h4>
+        <p>Use the form above to attach memorable photos, sketches, or evidence to this entry.</p>
       </div>
 
       <!-- Evidence Cards Grid -->

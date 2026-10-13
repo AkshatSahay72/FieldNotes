@@ -12,6 +12,8 @@ services:
         value: 3.11.9
       - key: APP_ENV
         value: production
+      - key: APP_MODE
+        value: demo
       - key: DEMO_MODE
         value: "true"
       - key: EMBEDDING_MODEL

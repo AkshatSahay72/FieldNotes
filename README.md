@@ -1,8 +1,10 @@
 # Fieldnote
 
-> **A Research Notes & Evidence Management System using MongoDB**
+> **A Personal Memory Archive & Research Notes System using MongoDB**
 
-Fieldnote is a lightweight backend system built with **FastAPI** and **PyMongo** designed to showcase core MongoDB concepts, including native document modeling, indexing, aggregation pipelines, and MongoDB Atlas Vector Search.
+Fieldnote is a lightweight personal application built with **FastAPI** and **PyMongo** designed to showcase core MongoDB concepts, including native document modeling, indexing, aggregation pipelines, and MongoDB Atlas Vector Search.
+
+Guided by the product principle **"Fieldnote helps you remember your life, not manage your life"**, the system provides low-friction memory capture, chronological timeline exploration, conceptual semantic recall, and structured topic archiving—without AI chatbot bloat or complex multi-tenant workspace clutter.
 
 ---
 
@@ -10,43 +12,34 @@ Fieldnote is a lightweight backend system built with **FastAPI** and **PyMongo**
 
 This project is tailored for an academic evaluation / viva setting. It deliberately avoids high-level Object-Document Mappers (ODMs) like MongoEngine or Beanie so that direct PyMongo driver usage, queries, indexes, and aggregation stages are transparent and explainable.
 
-### Core Capabilities (Planned Across Milestones)
-1. **Research Notes CRUD**: Idiomatic document CRUD operations with Pydantic validation.
-2. **Evidence & Attachments**: Image uploads with user-provided captions and structured metadata.
+### Core Capabilities
+1. **Personal Memory & Notes Management**: Idiomatic document CRUD operations with Pydantic validation across five entry classifications: `memory`, `journal`, `idea`, `learning`, and `research`.
+2. **Evidence & Attachments**: Image uploads (JPEG, PNG, WebP) with user-provided captions, structured metadata, and binary streaming via PyMongo GridFS.
 3. **Optimized Indexing**: Single-field, compound, and native text search indexes with query performance explainability.
-4. **Analytics Aggregation Pipelines**: Multi-stage aggregation pipelines for tag analytics and research timeline statistics.
-5. **Semantic Retrieval**: Vector embeddings and MongoDB Atlas Vector Search.
+4. **Analytics Aggregation Pipelines**: Multi-stage aggregation pipelines for tag analytics, daily activity timelines, and evidence rankings.
+5. **Semantic Retrieval**: 384-dimensional vector embeddings and MongoDB Atlas Vector Search (`$vectorSearch`).
+6. **Single-Owner Security**: First-party Argon2id password hashing, HTTP-only session cookies, double-submit CSRF defenses, brute-force rate-limiting, and fail-closed database separation.
 
----
-
-## Technical Stack
-
-- **Language**: Python 3.10+
-- **Framework**: FastAPI
-- **Database Driver**: PyMongo
-- **Database**: MongoDB Atlas
-- **Testing**: pytest & HTTPX
-- **Configuration**: Environment variables (`.env`)
-
----
-
-## Milestone-Driven Development Workflow
-
-The project is built incrementally in strict, reviewable milestones:
-
-- **Milestone 0**: Documentation & Minimal Backend Foundation *(Completed)*
-- **Milestone 1**: MongoDB Connection & Health Lifecycle *(Completed)*
-- **Milestone 2**: Research Notes Data Model & CRUD Operations *(Completed)*
-- **Milestone 3**: Image Attachments & Evidence Metadata with GridFS *(Completed)*
-- **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
-- **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Completed)*
-- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Completed & Fully Verified)*
-- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2D.1 Demo Safety & Seeding Complete)*
-
-Documentation files in `docs/` serve as the source of truth:
-- [PROJECT_SPEC.md](docs/PROJECT_SPEC.md): Scope, non-goals, and milestone acceptance criteria.
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md): Architectural decisions, schemas, and design constraints.
 - [IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md): Current progress, decisions, verification records, and next milestone.
+
+---
+
+## 10-Phase Project Verification & Status Table
+
+The Fieldnote system was implemented and hardened across 10 progressive phases:
+
+| Phase | Phase Name | Implemented Functionality | Tests & Verification Performed | Remaining Limitations | Final Status |
+| :---: | :--- | :--- | :--- | :--- | :---: |
+| **01** | Documentation & Backend Foundation | FastAPI lifespan, PyMongo connection management, `/health` endpoint with live database ping and timeout controls. | `tests/test_health.py` (3 tests): ping response, timeout handling, connection lifespan. | Requires reachable MongoDB instance. | **Complete** |
+| **02** | Personal Memory & Notes Data Model | Direct PyMongo CRUD (`POST/GET/PUT/DELETE /api/notes`), BSON ObjectId validation, 5 entry types (`journal`, `memory`, `idea`, `learning`, `research`), fail-safe error handling. | `tests/test_notes.py`, `tests/test_notes_edge_cases.py` (28 tests): CRUD, pagination, edge cases. | Single-owner / public demo records; no multi-tenant sharing. | **Complete** |
+| **03** | PyMongo GridFS Evidence & Image Attachments | Binary chunk streaming (255 KB), cascading deletion on note deletion, magic byte + Pillow validation (JPEG, PNG, WebP ≤ 5 MB), safe filename sanitization. | `tests/test_attachments.py` (22 tests): upload bounds, MIME validation, streaming, cascading delete. | Non-image files (.pdf, .zip) intentionally rejected. | **Complete** |
+| **04** | Indexing, Multikey Filtering & Text Search | Compound sort index `idx_notes_created_at_id_desc`, compound text index `idx_notes_text`, multikey tag filtering with `$in` OR semantics. | `tests/test_indexes.py` (8 tests): compound sorting, explain plans, text search stem matching. | Full-text search requires pre-built text index. | **Complete** |
+| **05** | Aggregation Analytics Pipelines | Multi-stage aggregation pipelines: `$unwind` & `$group` for tags, `$dateToString` for daily activity, `$lookup` & `$size` for child attachment rankings. | `tests/test_analytics.py` (16 tests): aggregation correctness, empty DB states, ranking limits. | Bound by MongoDB aggregation memory limits. | **Complete** |
+| **06** | Vector Embeddings & Atlas Vector Search | Dense vector embeddings (384-dim, `all-MiniLM-L6-v2`), `$vectorSearch` pipeline, bounded candidate pool (`calculate_num_candidates`), graceful fallback on index unavailability (HTTP 503). | `tests/test_search.py`, `tests/test_embedding.py` (24 tests): vector similarity, dimension validation, fallback error handling. | Requires MongoDB Atlas Search index (`idx_notes_vector`) for vector execution; keyword search fallback active when unavailable. | **Complete** |
+| **07** | Researcher Dashboard & Public Demo Mode | Responsive Jinja2/CSS/JS interface (`/` and `/analytics`), accessible dialogs (`role="dialog"`), image lightbox, fail-closed read-only demo mode (`DEMO_MODE=true` rejects writes with 403), synthetic dataset seeder (`scripts/seed_demo_data.py`). | `tests/test_ui.py`, `tests/test_demo_mode.py`, `tests/test_deployment.py` (42 tests): UI shells, demo mode guards, seed cleanup. | Demo mode is globally read-only across all visitors. | **Complete** |
+| **08** | Single-Owner Auth & Route Protection | Argon2id password hashing, HTTP-only secure session cookies, double-submit CSRF tokens, sliding-window rate limiting, strict query scoping by `user_id`. | `tests/test_auth.py`, `tests/test_authorization.py`, `tests/test_modes_and_separation.py` (72 tests): hashing, CSRF rejections, route protection matrix. | Single-owner architecture deliberately rejects public user registration. | **Complete** |
+| **09** | Product Identity & Personal Memory Workflows | Dedicated Capture, Timeline (chronological day dividers), Recall (semantic match badges), Archive (tag & type filters), minimal calm visual identity (#14263D, #0D9488, #F4F7FA). | UI regression inspection, browser verification recording (`release_gate_browser_test_1791918847545.webp`), CSS/JS contract checks. | No task boards, Kanban, or project management widgets (by design). | **Complete** |
+| **10** | Final Audit, Public Access Fix & Atlas Hardening | Public unauthenticated access verified for all read/browse/recall/archive/analytics/attachments; demo seeded data protected; least-privilege Atlas database user roles documented; full test suite passes (243 tests); Git diff audited and cleanly committed. | Full pytest suite (243 passed in ~12s), `git diff --check`, `python -m compileall app scripts tests` (0 errors). | Atlas role changes must be applied manually by cluster admin in Atlas console. | **Complete** |
 
 ---
 
@@ -314,24 +307,160 @@ python scripts/seed_demo_data.py --force
 - **Compensating Cleanup**: If any GridFS metadata insertion fails during upload, the newly uploaded binary chunks are automatically deleted.
 - **Idempotency**: Rerunning the seed script performs zero duplicate insertions.
 
-### 3. MongoDB Atlas Network Access & Security Trade-offs
+### 3. MongoDB Atlas Least-Privilege Database User Hardening
 
-Render web services on free and individual starter plans use dynamic outbound IP addresses that change across builds and container restarts.
+In shared multi-environment clusters, database users should adhere strictly to the principle of least privilege. Overly broad administrative roles (such as `atlasAdmin@admin` or `readWriteAnyDatabase@admin`) must never be assigned to application workloads.
 
-- **The `0.0.0.0/0` ("Allow Access from Anywhere") Trade-off**:
-  - Setting `0.0.0.0/0` in MongoDB Atlas Network Access is commonly used for dynamic hosts, but it exposes the database cluster port to the entire internet.
-  - **Security Mitigation**:
-    1. Create a dedicated Atlas database user with credentials scoped strictly to `readWrite` on `fieldnote_demo` only (not cluster admin or access to other databases).
-    2. Use a high-entropy, auto-generated password (32+ characters).
-    3. Use TLS and SCRAM-SHA-256 (default in MongoDB Atlas).
-    4. For temporary evaluations, utilize Atlas's "Temporary IP Access" feature with auto-expiration (e.g. 6 or 24 hours).
-    5. On Render Team/Enterprise plans, utilize Render's **Static Outbound IP** feature to whitelist specific IPs in Atlas Network Access, avoiding `0.0.0.0/0` entirely.
+#### Recommended Role Scoping Matrix
 
-### 4. Render Free-Tier Resource Limitations & Mitigations
+| Database User | Intended Scope | Recommended MongoDB Atlas Built-in Role | Unnecessary Roles to Revoke |
+| :--- | :--- | :--- | :--- |
+| **`fieldnote_demo`** | Public Web Showcase (Render) | `readWrite@fieldnote_demo` | Revoke `readWriteAnyDatabase@admin` |
+| **`fieldnote_app`** | Private Single-Owner Instance | `readWrite@fieldnote_private` | Revoke `readWriteAnyDatabase@admin` |
+| **`akshatsahay19_db_user`** | Cluster Administrator | `atlasAdmin@admin` (Console only) | NEVER use in `.env` or application configs |
 
-| Limitation | Impact | Mitigation in Fieldnote |
+#### Manual Step-by-Step Atlas Permission Hardening Procedure
+
+1. **Log in to MongoDB Atlas**: Navigate to [cloud.mongodb.com](https://cloud.mongodb.com) and select your project.
+2. **Access Database Access**:
+   - In the left sidebar under **Security**, click **Database Access**.
+3. **Harden `fieldnote_demo`**:
+   - Locate user `fieldnote_demo` and click **Edit**.
+   - Under **Database User Privileges**, change **Built-in Role** from `readWriteAnyDatabase` to **Specific Privileges** / **Built-in Roles**.
+   - Add privilege: Role `readWrite` on Database `fieldnote_demo`.
+   - Ensure NO privileges exist for `fieldnote_private`, `fieldnote_db`, or `admin`.
+   - Click **Update User**.
+4. **Harden `fieldnote_app`**:
+   - Locate user `fieldnote_app` and click **Edit**.
+   - Change role to `readWrite` on Database `fieldnote_private` only.
+   - Click **Update User**.
+5. **Secure Administrative Credentials**:
+   - Retain `akshatsahay19_db_user` purely for browser-based cluster management. Do not place its password in repository code or hosting environments.
+
+#### Atlas Vector Search Index Definition (`idx_notes_vector`)
+
+To support semantic vector recall on `fieldnote_demo`:
+1. In Atlas, click **Database** > **Browse Collections**.
+2. Select database `fieldnote_demo` and collection `notes`.
+3. Click the **Atlas Search** tab > **Create Search Index** > **JSON Editor**.
+4. Select database `fieldnote_demo` and collection `notes`, name the index `idx_notes_vector`, and paste the following definition:
+   ```json
+   {
+     "fields": [
+       {
+         "numDimensions": 384,
+         "path": "embedding",
+         "similarity": "cosine",
+         "type": "vector"
+       }
+     ]
+   }
+   ```
+5. Click **Next** and **Create Search Index**. The index will show status `READY` once synchronization completes.
+
+### 4. Render Operational Constraints & Mitigations
+
+| Constraint | Operational Impact | Architectural Mitigation in Fieldnote |
 | :--- | :--- | :--- |
-| **512 MB RAM Limit** | PyTorch + SentenceTransformers can exceed RAM with multiple workers. | Enforce `--workers 1` in start command. Runtime memory is ~280-350 MB. |
-| **Inactivity Spin-down** | Free instances sleep after 15 minutes of inactivity. | 30-60s cold start latency on first request. Health check `/health` verifies availability once warm. |
-| **Ephemeral Filesystem** | Files written to local disk are lost on container restart. | All demo evidence attachments are stored in MongoDB GridFS; demo mode rejects local uploads. |
-| **Build Timeout & Bandwidth** | Standard PyTorch CUDA wheels are ~2.5 GB and can exceed build limits. | Build command installs the CPU-only PyTorch wheel (`https://download.pytorch.org/whl/cpu`, ~180 MB) prior to `requirements.txt`. |
+| **Build Timeout & Bandwidth** | Standard PyTorch CUDA wheels are ~2.5 GB and exceed build limits. | Build command installs CPU-only wheel (`download.pytorch.org/whl/cpu`, ~180 MB) before `requirements.txt`. |
+| **Memory Ceiling (512 MB)** | Free PaaS instances enforce strict memory caps. | Single worker `--workers 1` in `startCommand` prevents multi-process memory multiplication. |
+| **Inactivity Spin-down** | Free instances spin down after 15 minutes of inactivity. | First request incurs ~30s cold start; subsequent requests run at low latency. Keep `/health` lightweight. |
+| **Ephemeral Filesystem** | Local disk storage is discarded on dyno restart or redeployment. | Image attachments stream directly to/from PyMongo GridFS in MongoDB Atlas. |
+
+---
+
+## Local Development & Test Execution
+
+### 1. Local Environment Setup
+
+```bash
+# 1. Clone repository
+git clone https://github.com/AkshatSahay72/FieldNotes.git
+cd FieldNotes
+
+# 2. Create virtual environment
+python -m venv .venv
+# On Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# On Linux/macOS:
+source .venv/bin/activate
+
+# 3. Install CPU-only PyTorch and project dependencies
+pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+
+# 4. Configure local environment
+cp .env.example .env
+# Edit .env with your local settings:
+# APP_ENV=development
+# MONGODB_URI=mongodb://localhost:27017
+# DATABASE_NAME=fieldnote_db
+```
+
+### 2. Running Automated Tests
+
+Fieldnote includes an extensive automated test suite of 243 tests covering authentication, route authorization, CRUD, GridFS streaming, Atlas search, analytics, and fail-closed demo mode:
+
+```bash
+# Run complete test suite (executes isolated offline via tests/conftest.py):
+pytest -v
+
+# Run targeted test suites:
+pytest tests/test_notes.py tests/test_attachments.py
+pytest tests/test_auth.py tests/test_authorization.py
+pytest tests/test_demo_mode.py tests/test_modes_and_separation.py
+pytest tests/test_deployment.py
+
+# Python syntax compilation check:
+python -m compileall app scripts tests
+
+# Whitespace and formatting check:
+git diff --check
+```
+
+### 3. Manual Smoke-Test Checklist
+
+Use this checklist to verify a local instance or the live public deployment (`https://fieldnote-jzvx.onrender.com`):
+
+- [ ] **Health Check (`/health`)**: Returns HTTP 200 with `{"status": "healthy", "database": "connected"}`.
+- [ ] **Public Dashboard Browsing (`/`)**: Page loads with Navy/Teal/Off-white theme without prompting for login.
+- [ ] **Timeline Feed**: Seeded notes render chronologically with date badges and classification pills (`Journal`, `Idea`, etc.).
+- [ ] **Tag Filtering**: Clicking tag pills filters observation cards using MongoDB `$in` OR semantics.
+- [ ] **Text Search**: Typing in search bar and pressing Enter executes `$text` search; zero matches show clean empty state.
+- [ ] **Recall (Semantic Search)**: Switching to Semantic Search queries Atlas Vector Search; results display similarity percentage badges.
+- [ ] **Evidence Lightbox**: Clicking `📷 Evidence` on a note opens the gallery; clicking a thumbnail opens the full-size image lightbox.
+- [ ] **Analytics View (`/analytics`)**: Overview counters, tag frequency bars, daily activity timeline, and evidence ranking cards render correctly.
+- [ ] **Demo Mode Write Protection**: Clicking `+ New Entry` or submitting a form in demo mode triggers an informative toast explaining that the demo is read-only.
+- [ ] **Responsive Navigation**: Resizing to mobile viewport reveals hamburger menu; opening drawer displays all navigation links with accessible focus trap.
+
+---
+
+## Academic Evaluation & Viva Guide
+
+This section summarizes key technical talking points and suggested presentation materials for the academic defense:
+
+### 1. MongoDB Proficiency Matrix (Viva Defense Points)
+
+| Evaluated Concept | Implementation Location | Viva Explanation / Demonstration |
+| :--- | :--- | :--- |
+| **Direct PyMongo Usage** | `app/db.py`, `app/routes/notes.py` | Explain avoiding ORM/ODM impedance mismatches: queries use raw BSON documents and explicit driver methods (`insert_one`, `find`, `find_one_and_update`, `delete_one`). |
+| **Secondary & Compound Indexes** | `app/db.py:init_db_indexes` | Explain `idx_notes_created_at_id_desc`: compound B-tree index on `[("created_at", -1), ("_id", -1)]` satisfying deterministic pagination sorting without memory-intensive sort stages. |
+| **Native Text Search** | `app/routes/notes.py:build_notes_query` | Explain compound text index `idx_notes_text` on `{title: "text", content: "text"}` and `$text` / `$search` operator with stem matching. |
+| **Aggregation Pipelines** | `app/routes/analytics.py` | Explain multi-stage pipelines: `$unwind` on multikey tags, `$group` with `$sum`, `$dateToString` for chronological bucketing, and `$lookup` for child attachment counts. |
+| **Vector Search (`$vectorSearch`)** | `app/routes/search.py` | Explain 384-dimensional cosine similarity embeddings (`sentence-transformers/all-MiniLM-L6-v2`), Atlas vector index definition, and candidate bounding (`numCandidates`). |
+| **Chunked Binary Storage (GridFS)** | `app/routes/attachments.py` | Explain storing binary image streams in `fs.files` and `fs.chunks` (255 KB chunks), cascading deletion, and keeping large binaries out of BSON 16 MB document limits. |
+
+### 2. Suggested Screenshots for Academic Report & Slides
+
+1. **Figure 1 — Personal Memory Journal & Timeline**:
+   - Screenshot of the main dashboard (`/`) displaying the timeline with date headers ("Today", "Yesterday"), entry classification badges (`Journal`, `Idea`, `Memory`), and tag pills.
+2. **Figure 2 — Semantic Vector Recall in Action**:
+   - Screenshot of Recall view showing natural-language query matching (e.g. searching for emotional or conceptual phrases) with transparent similarity match badges (`89% match`).
+3. **Figure 3 — PyMongo GridFS Evidence Lightbox**:
+   - Screenshot of an open photo evidence modal and full-size lightbox streaming directly from GridFS with MIME metadata.
+4. **Figure 4 — MongoDB Aggregation Analytics Dashboard (`/analytics`)**:
+   - Screenshot of the analytics page displaying overview cards, ranked tag frequency bars, and chronological activity trends.
+5. **Figure 5 — MongoDB Atlas Search Index Configuration**:
+   - Screenshot from MongoDB Atlas UI showing `idx_notes_vector` in `READY` status on `notes.embedding`.
+6. **Figure 6 — Automated Test Suite Pass**:
+   - Terminal screenshot of `pytest -v` completing 240+ tests across authentication, CRUD, GridFS, search, and mode separation in ~12 seconds.

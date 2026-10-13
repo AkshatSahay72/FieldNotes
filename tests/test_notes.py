@@ -842,3 +842,70 @@ def test_filter_notes_by_type(client):
     assert res_journal.status_code == 200
     notes_j = res_journal.json()
     assert all(n["type"] == "journal" for n in notes_j)
+
+
+def test_legacy_note_without_type_field_returns_memory_default(client, fake_db):
+    """Verify legacy note documents in MongoDB without a 'type' field default safely to 'memory'."""
+    legacy_oid = ObjectId()
+    now = datetime.now(timezone.utc)
+    # Directly insert legacy note without 'type'
+    fake_db["notes"].docs[legacy_oid] = {
+        "_id": legacy_oid,
+        "title": "Legacy Historical Record",
+        "content": "A note created prior to schema classification fields.",
+        "tags": ["history", "archive"],
+        "user_id": None,
+        "is_demo": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    # Fetch via single note lookup
+    res_single = client.get(f"/api/notes/{str(legacy_oid)}")
+    assert res_single.status_code == 200
+    assert res_single.json()["type"] == "memory"
+
+    # Fetch via list notes
+    res_list = client.get("/api/notes")
+    assert res_list.status_code == 200
+    matching = [n for n in res_list.json() if n["id"] == str(legacy_oid)]
+    assert len(matching) == 1
+    assert matching[0]["type"] == "memory"
+
+
+def test_update_note_type_field_success(client):
+    """Verify updating a note's classification type via PUT /api/notes/{id} persists."""
+    create_res = client.post(
+        "/api/notes",
+        json={"title": "Draft Idea", "content": "Initial thoughts.", "type": "idea"},
+    )
+    assert create_res.status_code == 201
+    note_id = create_res.json()["id"]
+    assert create_res.json()["type"] == "idea"
+
+    # Update classification to research
+    update_res = client.put(
+        f"/api/notes/{note_id}",
+        json={
+            "title": "Validated Research",
+            "content": "Initial thoughts confirmed with findings.",
+            "tags": ["findings"],
+            "type": "research",
+        },
+    )
+    assert update_res.status_code == 200
+    assert update_res.json()["type"] == "research"
+    assert update_res.json()["title"] == "Validated Research"
+
+
+def test_list_notes_tag_validation_rejects_empty_tags(client):
+    """Verify empty or whitespace-only tags in tag parameter raise 400 Bad Request."""
+    assert client.get("/api/notes?tag=").status_code == 400
+    assert client.get("/api/notes?tag=  ").status_code == 400
+    assert client.get("/api/notes?tag=valid,").status_code == 400
+    assert client.get("/api/notes?tag=valid,   ").status_code == 400
+
+
+def test_list_notes_text_search_empty_query_rejected(client):
+    """Verify whitespace-only full-text search query 'q' raises 400 Bad Request."""
+    assert client.get("/api/notes?q=   ").status_code == 400

@@ -1,23 +1,31 @@
 """Seed script for Fieldnote synthetic demo dataset.
 
-Populates a designated demo database with clearly fictional research notes
-and synthetic evidence images. Designed to be completely idempotent: safe to
-rerun repeatedly without creating duplicate notes or attachments.
+Populates a designated demo database with clearly fictional research notes,
+personal memories, journal reflections, ideas, learning syntheses, and synthetic
+evidence images across all 5 schema types ('journal', 'memory', 'research', 'idea', 'learning').
+
+Designed to be completely idempotent: safe to rerun repeatedly without creating duplicate
+notes or attachments.
+
+Safety Guards:
+1. Requires an explicit target database name (never falls back silently to personal/dev DB).
+2. Unconditionally refuses execution in production environments (APP_ENV=production).
+3. Unconditionally refuses to seed personal databases ('fieldnote_private', 'fieldnote_personal').
+4. Rejects default development database ('fieldnote_db') unless --allow-default-db is passed.
+5. Marks all seeded records explicitly as public demo records (is_demo=True, user_id=None).
 
 Usage:
-    # Explicit demo database selection via environment variable:
-    DATABASE_NAME=fieldnote_demo python scripts/seed_demo_data.py
-
-    # Or explicit CLI argument:
-    python scripts/seed_demo_data.py --database-name fieldnote_demo
-
     # Dry-run inspection without database modifications:
     python scripts/seed_demo_data.py --database-name fieldnote_demo --dry-run
+
+    # Execute seeding into explicit demo database:
+    python scripts/seed_demo_data.py --database-name fieldnote_demo
 """
 
 import argparse
 import io
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,20 +53,93 @@ from app.services.embedding import (
 logger = logging.getLogger("seed_demo_data")
 
 DEFAULT_DEV_DATABASE_NAME = "fieldnote_db"
+KNOWN_PRIVATE_DATABASES = {"fieldnote_private", "fieldnote_personal"}
 
 # ---------------------------------------------------------------------------
-# Synthetic Research Notes (Fictional academic observations)
+# Synthetic Entries (Fictional people, projects, dates, and experiences)
+# Covering all 5 schema types: journal, memory, research, idea, learning
 # ---------------------------------------------------------------------------
 
 SYNTHETIC_NOTES: List[Dict[str, Any]] = [
+    # 1. Type: journal
+    {
+        "title": "Journal: Quiet Solarium Reflections & Evening Chamomile",
+        "type": "journal",
+        "content": (
+            "## Evening in the Solarium\n"
+            "Sitting by the western bay window of the high-altitude station as twilight deepens over the ridge. "
+            "Spent the last hour inspecting the hydroponic chamomile trays with Maya.\n\n"
+            "### Reflections on Pace\n"
+            "- It is tempting to treat every observation as urgent data, but quiet reflection often surfaces "
+            "the patterns we missed during busy daytime collection.\n"
+            "- The gentle hum of the nutrient misting pump feels grounding after hours analyzing telemetry streams.\n"
+            "- Tomorrow: calibrate the optical spectrometer before the first ridge frost settles."
+        ),
+        "tags": ["journal", "solarium", "night", "botany", "reflection"],
+        "created_at": datetime(2026, 8, 14, 21, 45, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 8, 14, 21, 45, 0, tzinfo=timezone.utc),
+    },
+    # 2. Type: journal
+    {
+        "title": "Journal: Field Station Relocation — Packing Crates for Station Apex",
+        "type": "journal",
+        "content": (
+            "## Moving Day Reflections\n"
+            "The valley field lab is almost completely packed into weather-sealed shipping containers. "
+            "Dr. Soren and I spent the afternoon securing the delicate quartz cuvettes and micro-balances.\n\n"
+            "### Transitions\n"
+            "- Leaving the valley feels bittersweet. We spent seven months here learning the rhythms of the wetlands.\n"
+            "- Station Apex sits 1,400 meters higher on the windswept eastern saddle. Expecting colder nights, "
+            "cleaner optical windows, and much more wind sheer.\n"
+            "- Key goal for week one at Apex: establish the satellite uplink and deploy the atmospheric sensor array."
+        ),
+        "tags": ["journal", "station-apex", "travel", "packing", "fieldwork"],
+        "created_at": datetime(2026, 9, 2, 17, 30, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 9, 2, 17, 30, 0, tzinfo=timezone.utc),
+    },
+    # 3. Type: memory
+    {
+        "title": "Memory: First Sunrise at Observatory Ridge (May 2024)",
+        "type": "memory",
+        "content": (
+            "## Sensory Recollection\n"
+            "The memory of cresting Whispering Pines Trail at 5:15 AM with Soren and Elena. "
+            "The biting cold air carried a sharp scent of subalpine cedar, damp earth, and steam from our stainless steel coffee thermos.\n\n"
+            "### The Moment\n"
+            "- Watching the horizon ignite from deep indigo into layered bands of amber and coral.\n"
+            "- The frost on the solar panel frames began melting into tiny glistening rivulets.\n"
+            "- We paused for twenty minutes in total silence before switching on the radio mast. "
+            "One of those mornings where research feels indistinguishable from wonder."
+        ),
+        "tags": ["memory", "astronomy", "ridge", "dawn", "reflection"],
+        "created_at": datetime(2026, 8, 20, 5, 30, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 8, 20, 5, 30, 0, tzinfo=timezone.utc),
+    },
+    # 4. Type: memory
+    {
+        "title": "Acoustic Telemetry Log: Marine Mammal Echo Pattern Beta",
+        "type": "memory",
+        "content": (
+            "## Midnight in the Hydrophone Cabin\n"
+            "Listening to hydrophone array H-3 deployed along the continental slope at depth 240m from the research tender *Albatross*.\n\n"
+            "### Telemetry Experience\n"
+            "- In the dark cabin illuminated only by oscilloscope phosphors, distinct tonal clicks began rising above ambient swell noise.\n"
+            "- Frequency bandwidth sampled: 10 Hz to 96 kHz.\n"
+            "- Rhythmic fundamental pulses at 32.4 kHz with an inter-click interval of 145 ms.\n"
+            "- We logged the coordinates and listened for forty minutes as the pod drifted west past the underwater canyon."
+        ),
+        "tags": ["memory", "telemetry", "bioacoustics", "marine-biology"],
+        "created_at": datetime(2026, 9, 28, 16, 45, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 9, 28, 16, 45, 0, tzinfo=timezone.utc),
+    },
+    # 5. Type: research
     {
         "title": "Field Specimen Observation: Bioluminescent Fungi Strain Lumina-9",
-        "type": "discovery",
+        "type": "research",
         "content": (
-            "## Summary\n"
-            "Preliminary field examination of *Mycena lux-synthetica* (Strain Lumina-9) "
-            "collected from basalt cavern fissure at Grid Ref E-14.\n\n"
-            "### Methodology & Observations\n"
+            "## Summary & Methodology\n"
+            "Preliminary examination of *Mycena lux-synthetica* (Strain Lumina-9) collected from basalt cavern fissure at Grid Ref E-14.\n\n"
+            "### Field Observations\n"
             "- Substrate: Decomposed birch cellulose enriched with synthetic nutrient broth.\n"
             "- Peak luminescence measured at 520 nm (emerald green emission spectrum).\n"
             "- Luciferin-luciferase reaction demonstrated steady continuous emission over 72 hours.\n"
@@ -66,17 +147,17 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
             "### Next Steps\n"
             "Cross-verify genomic markers against fungal reference database."
         ),
-        "tags": ["specimen", "mycology", "bioluminescence", "subterranean"],
+        "tags": ["research", "specimen", "mycology", "bioluminescence", "subterranean"],
         "created_at": datetime(2026, 9, 15, 10, 30, 0, tzinfo=timezone.utc),
         "updated_at": datetime(2026, 9, 15, 10, 30, 0, tzinfo=timezone.utc),
     },
+    # 6. Type: research
     {
         "title": "Soil Stratification and Geochemical Assay: Site Borehole Bravo-12",
         "type": "research",
         "content": (
             "## Geochemical Profile\n"
-            "Coring completed at Borehole Bravo-12 in ancient lacustrine sediment deposits. "
-            "Total depth reached: 4.8 meters.\n\n"
+            "Coring completed at Borehole Bravo-12 in ancient lacustrine sediment deposits. Total depth reached: 4.8 meters.\n\n"
             "### Stratigraphic Horizons\n"
             "1. **0.0 - 0.8m**: Humic loam with active micro-arthropod bioturbation.\n"
             "2. **0.8 - 2.4m**: Dense silty clay with micro-nodules of iron oxyhydroxide.\n"
@@ -84,77 +165,78 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
             "### Laboratory Notes\n"
             "Core intactness rated at 96%. Samples partitioned for moisture content and carbon assay."
         ),
-        "tags": ["geology", "stratigraphy", "soil-mechanics", "lacustrine"],
+        "tags": ["research", "geology", "stratigraphy", "soil-mechanics", "lacustrine"],
         "created_at": datetime(2026, 9, 18, 14, 15, 0, tzinfo=timezone.utc),
         "updated_at": datetime(2026, 9, 18, 14, 15, 0, tzinfo=timezone.utc),
     },
+    # 7. Type: idea
+    {
+        "title": "Project Concept: Autonomous Solar-Kite Micro-Weather Network",
+        "type": "idea",
+        "content": (
+            "## Concept Proposal\n"
+            "A lightweight distributed weather-monitoring network using tethered carbon-fiber solar kites along coastal ridgelines.\n\n"
+            "### Architecture & Capabilities\n"
+            "- Ultralight airframe carrying micro-barometers, humidity sensors, and optical dewpoint probes.\n"
+            "- Flexible thin-film solar backing powers low-power BLE mesh transmission down the tether.\n"
+            "- Continuous vertical profiling from 10m to 150m AGL without rotor noise or battery depletion limits.\n"
+            "- Potential application: early fog-inversion warnings for agricultural valleys."
+        ),
+        "tags": ["idea", "drone-survey", "sensor-network", "climate", "hardware"],
+        "created_at": datetime(2026, 10, 2, 11, 20, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 10, 2, 11, 20, 0, tzinfo=timezone.utc),
+    },
+    # 8. Type: idea
+    {
+        "title": "Idea: Enzymatic Recycling for Expedition Polymer Ropes",
+        "type": "idea",
+        "content": (
+            "## Sustainable Field Gear Concept\n"
+            "Field stations generate significant discarded static climbing cord and nylon netting each season.\n\n"
+            "### Proposed Workflow\n"
+            "- Explore portable digestion tanks using recombinant cutinase enzymes (analogous to PX-400 assays).\n"
+            "- Shred frayed synthetic ropes into coarse granules in a hand-cranked camp mill.\n"
+            "- Digest into non-toxic liquid organic acid precursors that can be safely neutralized or reused as solvent.\n"
+            "- Eliminates plastic burn pits and reduces pack-out weight on remote expeditions."
+        ),
+        "tags": ["idea", "biochemistry", "sustainability", "polymers", "expedition"],
+        "created_at": datetime(2026, 10, 8, 13, 10, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 10, 8, 13, 10, 0, tzinfo=timezone.utc),
+    },
+    # 9. Type: learning
     {
         "title": "Cryogenic Core Preservation Protocol: Glacial Archive Sample Arc-7",
         "type": "learning",
         "content": (
-            "## Standard Operating Procedure Trial\n"
+            "## Standard Operating Procedure Takeaways\n"
             "Validation of cold-chain preservation protocols for synthetic glacial ice analogs.\n\n"
-            "### Procedure Summary\n"
+            "### Key Takeaways\n"
             "- Core extraction performed using diamond-tipped hollow auger.\n"
             "- Samples purged with dry gaseous argon (grade 5.0) to eliminate atmospheric CO₂ contamination.\n"
             "- Transferred immediately to vapor-phase liquid nitrogen storage unit at -160°C.\n"
             "- High-resolution tomography confirmed zero thermal fracture propagation.\n\n"
-            "### Quality Assurance\n"
+            "### Quality Standard\n"
             "Complies with Antarctic sample preservation standard protocol Revision 4.2."
         ),
-        "tags": ["protocol", "cryogenics", "ice-core", "paleoclimate"],
+        "tags": ["learning", "protocol", "cryogenics", "ice-core", "paleoclimate"],
         "created_at": datetime(2026, 9, 22, 9, 0, 0, tzinfo=timezone.utc),
         "updated_at": datetime(2026, 9, 22, 9, 0, 0, tzinfo=timezone.utc),
     },
+    # 10. Type: learning
     {
-        "title": "Acoustic Telemetry Log: Marine Mammal Echo Pattern Beta",
-        "type": "memory",
+        "title": "Learning Synthesis: High-Resolution Micro-CT Artifact Reduction Techniques",
+        "type": "learning",
         "content": (
-            "## Hydrophone Acoustic Recording\n"
-            "Hydrophone array H-3 deployed along continental slope at depth 240m.\n\n"
-            "### Telemetry Data\n"
-            "- Frequency bandwidth sampled: 10 Hz to 96 kHz.\n"
-            "- Detection: Distinct tonal sequences and multi-harmonic click trains.\n"
-            "- Mean fundamental frequency: 32.4 kHz with inter-click interval of 145 ms.\n"
-            "- Signal-to-noise ratio: 24 dB above ambient sea-state background.\n\n"
-            "### Observations\n"
-            "Pattern correlates with synthetic vocalization benchmark curves."
+            "## Radiographic Imaging Study Notes\n"
+            "Synthesizing lessons learned while scanning dense rock core inclusions with micro-computed tomography.\n\n"
+            "### Core Principles\n"
+            "- **Beam Hardening Correction**: Pre-filtering the raw X-ray beam with a 0.5mm copper shim reduces cupping artifacts in high-density basalt.\n"
+            "- **Sample Orientation**: Aligning cylindrical cores parallel to the rotation axis minimizes ring artifact distortion.\n"
+            "- **Ring Filter Calibration**: Always run blank detector flat-fields between every three core scans to prevent detector pixel drift."
         ),
-        "tags": ["telemetry", "bioacoustics", "marine-biology"],
-        "created_at": datetime(2026, 9, 28, 16, 45, 0, tzinfo=timezone.utc),
-        "updated_at": datetime(2026, 9, 28, 16, 45, 0, tzinfo=timezone.utc),
-    },
-    {
-        "title": "Autonomous Sensor Drone Flight Log: Transect Quadrant 4",
-        "type": "idea",
-        "content": (
-            "## Aerial Environmental Survey\n"
-            "Automated mission 4-B executed across riparian conservation zone.\n\n"
-            "### Sensor Telemetry\n"
-            "- Altitude: 45m AGL with 80% longitudinal overlap.\n"
-            "- Multispectral payload captured NDVI and calibrated surface thermal radiometry.\n"
-            "- Vegetative stress index indicated healthy canopy moisture across 92% of the surveyed transect.\n"
-            "- Flight duration: 28 minutes; battery reserve on recovery: 34%."
-        ),
-        "tags": ["drone-survey", "thermal-imaging", "sensor-network"],
-        "created_at": datetime(2026, 10, 2, 11, 20, 0, tzinfo=timezone.utc),
-        "updated_at": datetime(2026, 10, 2, 11, 20, 0, tzinfo=timezone.utc),
-    },
-    {
-        "title": "Enzymatic Degradation Kinetics: Synthetic Biopolymer PX-400",
-        "type": "research",
-        "content": (
-            "## Biodegradation Assay\n"
-            "In vitro degradation kinetics of synthetic polyester-amide compound PX-400.\n\n"
-            "### Reaction Parameters\n"
-            "- Enzyme: Recombinant cutinase analog (2.5 mg/mL in phosphate-buffered saline, pH 7.4).\n"
-            "- Temperature: 37.0°C ± 0.2°C with continuous orbital shaking at 120 RPM.\n"
-            "- Substrate weight loss: 42.1% at 48 hours, reaching 88.5% at 120 hours.\n"
-            "- Degradation products identified: Monomeric hydroxy acids with zero toxic residues."
-        ),
-        "tags": ["biochemistry", "kinetics", "polymers", "enzymes"],
-        "created_at": datetime(2026, 10, 8, 13, 10, 0, tzinfo=timezone.utc),
-        "updated_at": datetime(2026, 10, 8, 13, 10, 0, tzinfo=timezone.utc),
+        "tags": ["learning", "micro-ct", "imaging", "radiology", "methods"],
+        "created_at": datetime(2026, 10, 11, 15, 20, 0, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 10, 11, 15, 20, 0, tzinfo=timezone.utc),
     },
 ]
 
@@ -182,7 +264,6 @@ def generate_synthetic_image(title_text: str, accent_color: tuple, pattern: str 
         # Synthetic curve points
         points = []
         for x_val in range(48, 440, 6):
-            # bell-shaped curve around x=240
             dx = (x_val - 240) / 45.0
             y_val = 260 - int(160 / (1.0 + dx * dx))
             points.append((x_val, y_val))
@@ -211,6 +292,18 @@ def generate_synthetic_image(title_text: str, accent_color: tuple, pattern: str 
             draw.rectangle([bx, by, bx + 22, 260], fill=accent_color, outline=(15, 23, 42))
         draw.text((56, 75), "Fundamental: 32.4 kHz", fill=(15, 23, 42))
         draw.text((56, 95), "SNR: 24 dB (Calibrated)", fill=(100, 116, 139))
+
+    elif pattern == "kite_schema":
+        # Draw flight altitude telemetry grid
+        draw.line([(48, 260), (440, 260)], fill=(100, 116, 139), width=2)
+        draw.line([(48, 260), (48, 70)], fill=(100, 116, 139), width=2)
+        for gy in range(90, 260, 40):
+            draw.line([(48, gy), (440, gy)], fill=(226, 232, 240), width=1)
+        # Profile curve
+        kpoints = [(48, 250), (120, 220), (200, 150), (290, 110), (380, 85), (440, 80)]
+        draw.line(kpoints, fill=accent_color, width=3)
+        draw.text((56, 75), "Altitude: 150m AGL (Ascent Profile)", fill=(15, 23, 42))
+        draw.text((56, 95), "Telemetry: Barometric & Optical Dewpoint", fill=(100, 116, 139))
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -242,6 +335,14 @@ SYNTHETIC_ATTACHMENTS: List[Dict[str, Any]] = [
         "accent_color": (2, 132, 199),  # sky blue
         "pattern": "spectrogram",
     },
+    {
+        "parent_title": "Project Concept: Autonomous Solar-Kite Micro-Weather Network",
+        "filename": "solar_kite_telemetry_schema.png",
+        "caption": "Solar-Kite Ascent Altitude Profile",
+        "description": "Vertical barometric and optical dewpoint profiling telemetry.",
+        "accent_color": (13, 148, 136),  # teal
+        "pattern": "kite_schema",
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -258,6 +359,7 @@ def seed_demo_data(
 
     - Checks for existing notes by title; skips if present.
     - Checks for existing attachments by (note_id, filename); skips if present.
+    - Explicitly sets is_demo=True and user_id=None on all demo records.
     - Computes vector embeddings if embedding_service is available.
     - Returns counts of created and skipped records.
     """
@@ -294,6 +396,10 @@ def seed_demo_data(
         doc = dict(note_template)
         if "type" not in doc:
             doc["type"] = "memory"
+        # Always set is_demo=True and user_id=None for public demo records
+        doc["is_demo"] = True
+        doc["user_id"] = None
+
         # Compute vector embedding if service is provided
         if embedding_service is not None:
             try:
@@ -313,7 +419,6 @@ def seed_demo_data(
         note_id = title_to_id.get(parent_title)
 
         if note_id is None:
-            # Look up note in db if not in current run map
             parent_note = db["notes"].find_one({"title": parent_title})
             if parent_note is not None:
                 note_id = parent_note["_id"]
@@ -356,6 +461,8 @@ def seed_demo_data(
             "file_size": len(image_bytes),
             "caption": att_template.get("caption"),
             "description": att_template.get("description"),
+            "is_demo": True,
+            "user_id": None,
             "created_at": datetime.now(timezone.utc),
         }
         try:
@@ -390,7 +497,7 @@ def main() -> int:
         "--database-name",
         type=str,
         default=None,
-        help="Target database name (overrides DATABASE_NAME environment variable).",
+        help="Explicit target database name (e.g. 'fieldnote_demo').",
     )
     parser.add_argument(
         "--dry-run",
@@ -416,23 +523,48 @@ def main() -> int:
 
     settings = get_settings()
 
-    # Production safety guard: unconditionally refuse to seed in production environment
+    # 1. Require explicit target database - cannot default silently
+    target_db_name = args.database_name
+    if not target_db_name:
+        env_db = os.environ.get("DATABASE_NAME")
+        if env_db and env_db.strip():
+            target_db_name = env_db.strip()
+
+    if not target_db_name:
+        logger.error(
+            "SAFETY ABORT: An explicit target database must be specified via "
+            "--database-name <db> or DATABASE_NAME environment variable. "
+            "Silent database fallback is disabled to prevent accidental data pollution."
+        )
+        return 1
+
+    # 2. Production safety guard: unconditionally refuse to seed in production environment
     if settings.app_env.lower() == "production":
         logger.error(
             "SAFETY ABORT: Refusing to seed synthetic demo data in production environment (APP_ENV=production)."
         )
         return 1
 
-    target_db_name = args.database_name or settings.database_name
+    # 3. Personal user database protection: never allow seeding into private user databases
+    if (
+        target_db_name in KNOWN_PRIVATE_DATABASES
+        or target_db_name.startswith("fieldnote_private")
+        or target_db_name.startswith("fieldnote_personal")
+    ):
+        logger.error(
+            "SAFETY ABORT: Target database '%s' is a private personal database. "
+            "Demo records can NEVER be seeded into a personal user's database.",
+            target_db_name,
+        )
+        return 1
 
-    # Safety guard: prevent accidental seeding into the primary development database
+    # 4. Prevent accidental seeding into the primary development database without explicit override
     if target_db_name == DEFAULT_DEV_DATABASE_NAME and not args.allow_default_db:
         logger.error(
             "SAFETY ABORT: Target database is '%s' (the default development database). "
             "To prevent polluting development data with synthetic demo records, "
-            "please specify a dedicated demo database using DATABASE_NAME=fieldnote_demo "
-            "or --database-name fieldnote_demo. If you intentionally want to seed the "
-            "default database, pass --allow-default-db.",
+            "please specify a dedicated demo database using --database-name fieldnote_demo. "
+            "If you intentionally want to seed the default development database, pass --allow-default-db.",
             target_db_name,
         )
         return 1
@@ -449,7 +581,6 @@ def main() -> int:
         db = client[target_db_name]
 
         if not args.dry_run:
-            # Ensure indexes are established on the demo database
             init_db_indexes(db)
 
         embedding_service = None

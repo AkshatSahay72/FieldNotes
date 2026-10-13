@@ -10,7 +10,8 @@ from pymongo.errors import PyMongoError
 
 from app.config import check_demo_mode
 from app.db import get_database, get_gridfs
-from app.schemas import NoteCreate, NoteUpdate, NoteResponse
+from app.schemas import NoteCreate, NoteUpdate, NoteResponse, UserResponse
+from app.routes.auth import get_optional_current_user, enforce_write_access
 from app.services.embedding import (
     EmbeddingService,
     EmbeddingServiceError,
@@ -110,14 +111,15 @@ def build_notes_query(
     response_model=NoteResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new research note or memory entry",
-    dependencies=[Depends(check_demo_mode)],
+    dependencies=[Depends(enforce_write_access)],
 )
 def create_note(
     note_in: NoteCreate,
     db: Database = Depends(get_database),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> NoteResponse:
-    """Create a new research note document in MongoDB with vector embedding."""
+    """Create a new research note document in MongoDB with vector embedding and derived user ownership."""
     try:
         embedding_text = embedding_service.prepare_text(note_in.title, note_in.content)
         vector = embedding_service.generate_embedding(embedding_text)
@@ -129,6 +131,7 @@ def create_note(
         )
 
     now = datetime.now(timezone.utc)
+    user_id = ObjectId(current_user.id) if current_user else None
     note_doc = {
         "title": note_in.title,
         "content": note_in.content,
@@ -136,6 +139,7 @@ def create_note(
         "type": note_in.type or "memory",
         "embedding": vector,
         "embedding_model": embedding_service.model_name,
+        "user_id": user_id,
         "created_at": now,
         "updated_at": now,
     }
@@ -187,13 +191,18 @@ def list_notes(
         description="Maximum number of notes to return (default: 20, max: 100).",
     ),
     db: Database = Depends(get_database),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> List[NoteResponse]:
     """Retrieve research notes with optional tag filtering, full-text search, and pagination.
     
-    Notes are returned in stable descending order: newest first by created_at, with _id as tie-breaker.
+    Notes are strictly scoped to the authenticated user (or public demo notes if unauthenticated).
     """
     cleaned_tags = parse_and_validate_tags(tag=tag, tags=tags)
     filter_query = build_notes_query(tag_list=cleaned_tags, q=q, entry_type=entry_type)
+    if current_user:
+        filter_query["user_id"] = ObjectId(current_user.id)
+    else:
+        filter_query["user_id"] = None
 
     try:
         cursor = (
@@ -220,9 +229,11 @@ def list_notes(
 def get_note(
     note_id: str,
     db: Database = Depends(get_database),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> NoteResponse:
-    """Retrieve a single research note document by its ObjectId."""
+    """Retrieve a single research note document by its ObjectId, scoped to authenticated owner."""
     oid = validate_object_id(note_id)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         doc = db["notes"].find_one({"_id": oid})
@@ -239,6 +250,13 @@ def get_note(
             detail=f"Note with ID '{note_id}' not found",
         )
 
+    # Public synthetic demo records can be read; private records require matching owner
+    if not doc.get("is_demo", False) and doc.get("user_id") != owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
     return note_doc_to_response(doc)
 
 
@@ -246,16 +264,18 @@ def get_note(
     "/{note_id}",
     response_model=NoteResponse,
     summary="Update a research note by ID",
-    dependencies=[Depends(check_demo_mode)],
+    dependencies=[Depends(enforce_write_access)],
 )
 def update_note(
     note_id: str,
     note_in: NoteUpdate,
     db: Database = Depends(get_database),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> NoteResponse:
-    """Update title, content, and tags of an existing note with vector embedding recomputation."""
+    """Update title, content, and tags of an existing note with vector embedding recomputation and owner scoping."""
     oid = validate_object_id(note_id)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
     try:
         existing = db["notes"].find_one({"_id": oid})
@@ -267,6 +287,20 @@ def update_note(
         )
 
     if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    # Protect synthetic demo records from mutation across all clients
+    if existing.get("is_demo", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic demo records are read-only",
+        )
+
+    # Strict owner authorization
+    if existing.get("user_id") != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Note with ID '{note_id}' not found",
@@ -325,21 +359,19 @@ def update_note(
     "/{note_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a research note by ID with cascading attachment cleanup",
-    dependencies=[Depends(check_demo_mode)],
+    dependencies=[Depends(enforce_write_access)],
 )
 def delete_note(
     note_id: str,
     db: Database = Depends(get_database),
     fs: GridFS = Depends(get_gridfs),
+    current_user: Optional[UserResponse] = Depends(get_optional_current_user),
 ) -> Response:
-    """Delete a research note and safely clean up all linked GridFS attachments.
-    
-    If cleaning up child attachments fails, the parent note is NOT deleted,
-    preventing inconsistent or partial deletions.
-    """
+    """Delete a research note and safely clean up all linked GridFS attachments within owner scope."""
     oid = validate_object_id(note_id)
+    owner_id = ObjectId(current_user.id) if current_user else None
 
-    # 1. Verify note exists first
+    # 1. Verify note exists
     try:
         note = db["notes"].find_one({"_id": oid})
     except PyMongoError as err:
@@ -350,6 +382,20 @@ def delete_note(
         )
 
     if note is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Note with ID '{note_id}' not found",
+        )
+
+    # Protect synthetic demo records from deletion across all clients
+    if note.get("is_demo", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic demo records are read-only",
+        )
+
+    # Strict owner authorization
+    if note.get("user_id") != owner_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Note with ID '{note_id}' not found",
