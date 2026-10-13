@@ -51,7 +51,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
 | **Aggregation Pipelines** | Multi-stage analytical queries | **IMPLEMENTED** (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$lookup`, `$dateToString`) |
 | **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestone 6B: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script) |
-| **Vector Search** | Vector index query using `$vectorSearch` | **NOT IMPLEMENTED** (Milestone 6C/6D) |
+| **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestone 6C: `GET /api/search/semantic` with query embedding, pipeline construction, score projection; Atlas index provisioning deferred to Milestone 6D) |
 
 ---
 
@@ -273,3 +273,53 @@ Fieldnote provides analytics via dedicated read-only aggregation pipelines in `a
   - `$project` evaluates `{"$size": "$attachments"}` directly inside the MongoDB database engine. **Crucially, attachment documents and binary GridFS chunks are never transmitted to Python**, preventing memory exhaustion.
   - Notes with 0 attachments yield an empty array from `$lookup` and are accurately counted with `attachment_count: 0`. The query parameter `?include_zero=false` allows filtering to notes with at least one attachment.
   - Deterministic sort orders by `attachment_count` descending, then title ascending, then `note_id` ascending.
+
+---
+
+## 8. Vector Search Architecture & Semantic Retrieval (`/api/search/semantic`)
+
+Milestone 6C introduces the dedicated semantic search route (`app/routes/search.py`) providing natural language similarity search over research notes.
+
+### 8.1 Retrieval Flow
+1. **Query Validation**:
+   - `q`: Required string parameter. Empty or whitespace-only inputs are rejected immediately with HTTP `400 Bad Request`.
+   - `limit`: Integer parameter bounded between 1 and 50 (default: 10). Out-of-bounds or non-integer values return HTTP `422 Unprocessable Entity`.
+2. **Query Vector Generation**:
+   - Converts the natural language query into a 384-dimensional dense vector using the singleton `EmbeddingService` (`sentence-transformers/all-MiniLM-L6-v2`).
+   - The query text is encoded directly without title fabrication or ad-hoc preprocessing, matching the training characteristics of the model.
+3. **Atlas Vector Search Pipeline**:
+   The aggregation pipeline executes on the `notes` collection:
+   ```python
+   [
+       {
+           "$vectorSearch": {
+               "index": "idx_notes_vector",
+               "path": "embedding",
+               "queryVector": query_vector,
+               "numCandidates": min(max(limit * 10, 20), 500),
+               "limit": limit,
+           }
+       },
+       {
+           "$project": {
+               "_id": 1,
+               "title": 1,
+               "content": 1,
+               "tags": 1,
+               "created_at": 1,
+               "updated_at": 1,
+               "score": {"$meta": "vectorSearchScore"},
+           }
+       },
+   ]
+   ```
+
+### 8.2 Architectural Invariants & Safety
+- **Candidate Pool Sizing**: `numCandidates` dynamically scales as `10 * limit`, bounded between a minimum of 20 and a maximum of 500. This balances HNSW graph recall with cluster latency and RAM usage.
+- **Score Semantics**: The `score` field is populated with `{"$meta": "vectorSearchScore"}`. This is an approximate cosine similarity ranking signal, not a probability or absolute guarantee of relevance.
+- **Zero Vector Leakage**: Stored note embeddings and intermediate query vectors are strictly excluded from projection and API response models (`SemanticSearchResult`).
+- **Sanitized Failure Handling**:
+  - Model loading/inference failures return HTTP `503 Service Unavailable` with clean messages.
+  - Recognizable index-not-found / unready index failures from MongoDB return HTTP `503` explaining that the vector search index is unavailable.
+  - Unrelated database errors return standard HTTP `503` without leaking credentials or stack traces.
+- **Scope Limitation**: Physical creation of the Atlas Vector Search index definition on Atlas and live cluster smoke verification are explicitly deferred to **Milestone 6D**.

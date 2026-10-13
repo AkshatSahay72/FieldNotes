@@ -98,6 +98,20 @@ class NoteResponse(BaseModel):
     updated_at: datetime
 
 
+class SemanticSearchResult(NoteResponse):
+    """Schema for research note retrieved via Atlas Vector Search with similarity score."""
+
+    score: float = Field(
+        ...,
+        description=(
+            "Vector search similarity score ($meta: 'vectorSearchScore'). "
+            "Note: This score is a relative similarity ranking signal, "
+            "not a probability or guaranteed measure of relevance."
+        ),
+        examples=[0.8742],
+    )
+
+
 class AttachmentResponse(BaseModel):
     """Schema for research note image attachment response."""
 

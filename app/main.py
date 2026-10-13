@@ -10,6 +10,7 @@ from app.schemas import HealthResponse
 from app.routes.notes import router as notes_router
 from app.routes.attachments import router as attachments_router
 from app.routes.analytics import router as analytics_router
+from app.routes.search import router as search_router
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     application.include_router(notes_router)
     application.include_router(attachments_router)
     application.include_router(analytics_router)
+    application.include_router(search_router)
 
     @application.get(
         "/health",

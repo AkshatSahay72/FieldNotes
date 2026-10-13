@@ -11,7 +11,8 @@
 | **Milestone 4** | Indexing & Efficient Querying | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 5** | Analytics & Aggregation Pipelines | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 6C & 6D** | Semantic Search Endpoint & Atlas Vector Indexing | **NOT IMPLEMENTED** (Next Milestone) |
+| **Milestone 6C** | Semantic Search API (`/api/search/semantic`) | **COMPLETED & FULLY VERIFIED** |
+| **Milestone 6D** | Atlas Vector Search Index Provisioning & Smoke Test | **NOT IMPLEMENTED** (Next Milestone) |
 | **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
 
 ---
@@ -261,11 +262,42 @@
 
 ---
 
+## Milestone 6C Log: Semantic Search API Implementation
+
+- **Date**: 2026-10-13
+- **Objective**: Implement the dedicated semantic search endpoint (`GET /api/search/semantic`), convert natural language queries into embeddings via the existing `EmbeddingService`, execute an Atlas Vector Search aggregation pipeline with score projection, and implement sanitized error handling.
+- **Verification Status**: Verified clean test execution across 126 pytest tests (114 existing + 12 new search tests). Verified input validation, parameter boundaries, candidate pool sizing, pipeline construction, response schema serialization, and fault isolation.
+
+### Files Created:
+1. `app/routes/search.py` — Dedicated semantic search route (`GET /api/search/semantic`), query validation (`q` non-empty, `limit` 1..50), pipeline execution with `$vectorSearch` and `{"$meta": "vectorSearchScore"}` projection, and differentiated database/index error handling.
+2. `tests/test_search.py` — 12 focused unit and integration tests covering pipeline verification, candidate bounds, limit validation, empty results, inference error handling, index-not-ready error handling, and router registration.
+
+### Files Modified:
+1. `app/schemas.py`:
+   - Added `SemanticSearchResult` model inheriting from `NoteResponse`, adding documented `score: float` field ($meta: `vectorSearchScore`).
+2. `app/main.py`:
+   - Registered `search_router` on application instance.
+3. `docs/ARCHITECTURE.md`:
+   - Updated component status table to Milestone 6C.
+   - Added Section 8 detailing Vector Search Architecture, pipeline stages, score semantics, and error handling.
+4. `README.md`:
+   - Documented `GET /api/search/semantic` endpoint usage, example JSON response, and offline backfill CLI instructions.
+
+### Key Architectural & Engineering Decisions Made:
+- **Direct Query Encoding Without Title Fabrication**: Natural language query strings are encoded directly via `embedding_service.generate_embedding(trimmed_q)` without prepending fabricated titles or altered prefixes, matching model behavior.
+- **Bounded Candidate Pool Scaling**: Implemented `calculate_num_candidates(limit) = min(max(limit * 10, 20), 500)`. Ensures candidate pool is always >= limit (at least 20), provides 10x recall multiplier, and caps at 500 to protect cluster RAM and query latency.
+- **Score Semantics & Zero Leakage**: The `score` field represents a relative similarity ranking signal (`vectorSearchScore`), explicitly documented as not a probability. Stored note embedding vectors and intermediate query vectors are strictly omitted from projection and API responses.
+- **Recognizable Index Error Handling**: Differentiated `OperationFailure` caused specifically by missing or unready vector search indexes (`"idx_notes_vector not found / not ready"`) from general database failures, providing clear 503 diagnostics without exposing internal connection strings or stack traces.
+- **Explicit Scope Boundary**: Index definition provisioning on MongoDB Atlas and live Atlas cluster verification are explicitly deferred to **Milestone 6D**. Semantic search is not claimed to work on live Atlas until verified.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Semantic search endpoint (`GET /api/search/semantic`, Milestone 6C).
-- [NOT IMPLEMENTED] MongoDB Atlas Vector Search index creation (Milestone 6D).
+- [NOT IMPLEMENTED] MongoDB Atlas Vector Search index creation and live provisioning (Milestone 6D).
+- [NOT IMPLEMENTED] Live Atlas vector search smoke verification (Milestone 6D).
+- [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
 - [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
 - [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
 - [NOT IMPLEMENTED] OCR, computer vision, or AI-generated captions.
@@ -274,7 +306,7 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 6C**: Semantic Search Endpoint Implementation
-  - Focus: Implementing semantic query retrieval endpoint with Pydantic query schemas, embedding the query string, and integrating `$vectorSearch`.
+- **Milestone 6D**: Atlas Vector Search Index Provisioning & Live Verification
+  - Focus: Defining and provisioning the Atlas Search index `idx_notes_vector` with cosine similarity, and executing live Atlas cluster verification.
   - Required before starting: Explicit user approval to proceed.
 

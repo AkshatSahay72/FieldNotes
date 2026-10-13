@@ -140,6 +140,23 @@ Documentation files in `docs/` serve as the source of truth:
   curl "http://127.0.0.1:8000/api/analytics/attachments?include_zero=false"
   ```
 
+### 4. Semantic Search (`/api/search/semantic`)
+
+- **Semantic Query Retrieval via Vector Search**:
+  ```bash
+  curl "http://127.0.0.1:8000/api/search/semantic?q=soil+moisture+anomalies&limit=10"
+  ```
+  *Response:* Returns ranked notes with `score` from `$meta: vectorSearchScore` (relative similarity ranking signal). Note: Atlas Vector Search index provisioning and live cluster validation are deferred to Milestone 6D.
+
+- **Offline Vector Backfill CLI**:
+  ```bash
+  # Dry-run inspection
+  python scripts/backfill_embeddings.py --dry-run
+
+  # Idempotent batch execution
+  python scripts/backfill_embeddings.py --batch-size 50
+  ```
+
 ---
 
 ## Quickstart
