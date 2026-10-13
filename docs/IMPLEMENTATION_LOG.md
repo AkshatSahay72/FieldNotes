@@ -13,7 +13,7 @@
 | **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6C** | Semantic Search API (`/api/search/semantic`) | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6D** | Atlas Vector Search Index Provisioning & Live Verifications (6D.1–6D.4) | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2C.1 Complete)** |
+| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2D.1 Complete)** |
 
 ---
 
@@ -571,18 +571,127 @@ Inserted 4 synthetic notes directly via PyMongo:
 
 ---
 
+## Milestone 7 Log — Phase 2D.1: Public Demo Safety and Dependency Hardening
+
+- **Date**: 2026-10-13
+- **Objective**: Prepare Fieldnote for a public demonstration using synthetic data with anonymous read-only access, server-side write rejection, dedicated demo database isolation, repeatable seeding without record duplication, and hardened explicit dependency declarations.
+- **Verification Status**: **COMPLETED & FULLY TESTED**. Verified with 169 automated pytest tests (11 new demo mode & seeding tests + 158 existing backend and UI tests). Zero live Atlas documents created or modified. Clean `git diff --check`.
+
+### Files Modified & Created:
+1. `requirements.txt` — Added missing direct runtime dependencies `jinja2>=3.1.4` and `python-multipart>=0.0.12` with compatible version bounds.
+2. `app/config.py` — Added `demo_mode: bool = Field(default=False, alias="DEMO_MODE", ...)`, enabled `populate_by_name=True` in `SettingsConfigDict`, and added `check_demo_mode` dependency function raising HTTP 403 Forbidden with non-sensitive standard payload `{"detail": "Operation not permitted in demo mode."}`.
+3. `.env.example` — Documented `DEMO_MODE=false`.
+4. `app/routes/notes.py` — Protected write-capable note endpoints (`POST /api/notes`, `PUT /api/notes/{note_id}`, `DELETE /api/notes/{note_id}`) with `dependencies=[Depends(check_demo_mode)]`.
+5. `app/routes/attachments.py` — Protected write-capable attachment endpoints (`POST /api/notes/{note_id}/attachments`, `DELETE /api/notes/{note_id}/attachments/{attachment_id}`) with `dependencies=[Depends(check_demo_mode)]`.
+6. `app/routes/ui.py` — Injected `settings: Settings = Depends(get_settings)` and passed `demo_mode: bool` into template rendering context for `/` and `/analytics`.
+7. `app/templates/base.html` — Added accessible `.demo-banner` notification rendered conditionally when `demo_mode` is enabled.
+8. `app/static/css/style.css` — Added responsive styling for `.demo-banner`, `.demo-banner-badge`, and `.demo-banner-text`.
+9. `scripts/seed_demo_data.py` *(Created)* — Idempotent CLI script populating a dedicated demo database with clearly fictional research observations and synthetic scientific diagram/spectrogram images generated in-memory via Pillow. Includes safety guard aborting if targeting default `fieldnote_db` without `--allow-default-db`.
+10. `tests/test_demo_mode.py` *(Created)* — 11 automated pytest unit tests validating demo mode write rejection, read/search/analytics/download availability, development mode writes, seeding idempotency, dry-run mode, and database selection safety guard.
+11. `README.md` & `docs/ARCHITECTURE.md` — Documented public demo mode behavior, database isolation, seeding procedure, and security boundaries.
+
+### Key Architectural & Safety Decisions Made:
+- **Server-Side Enforcement**: Protection is enforced declaratively via FastAPI route dependencies on both notes and attachments routers, guaranteeing that direct API calls (`cURL`, Swagger UI, automated scripts) are rejected before request body parsing or database access.
+- **Anonymous Read-Only Preservation**: Note listing, categorical filtering, text search, semantic vector search, analytics overview, tag charts, activity timeline, attachment rankings, and image downloads remain completely accessible without login or session tracking.
+- **Zero Schema or Multi-Tenant Pollution**: Avoided introducing multi-tenancy, authentication, user tables, or session models; maintained academic simplicity.
+- **Database Isolation & Safety Guard**: Demo records reside in an isolated database (e.g. `fieldnote_demo`) configured via `DATABASE_NAME`. The seed script automatically refuses to run against `fieldnote_db` without explicit confirmation.
+- **Synthetic Data Idempotency**: Notes match on unique title; attachments match on `(note_id, filename)`. Rerunning the seed script performs zero duplicate insertions.
+- **Zero Atlas Mutations**: All automated tests execute using in-memory test doubles (`FakeDatabase`, `FakeCollection`, `FakeGridFS`, `FakeEmbeddingService`).
+
+---
+
+## Milestone 7 Log — Phase 2D.1.1: Targeted Safety Corrections
+
+- **Date**: 2026-10-13
+- **Branch**: `main`
+- **Focus**: Targeted Safety Corrections from Phase 2D.1 Final Audit (Demo Mode Fail-Closed Validation, Test Suite Offline Isolation, Compensating GridFS Seed Cleanup, and Production Seed Guard).
+
+### Changes Implemented:
+
+1. `app/config.py` — Added `@model_validator(mode="after")` `validate_demo_database(self)` on `Settings`:
+   - Enforces fail-closed configuration in demo mode: When `DEMO_MODE=true`, `DATABASE_NAME` must be explicitly specified (tracked in `model_fields_set`).
+   - Specifically rejects `DATABASE_NAME=fieldnote_db` in demo mode with a clear `ValueError`, preventing accidental read-only exposure or collision with the default development database.
+   - Accepts explicitly configured dedicated demo database names (e.g., `fieldnote_demo`).
+   - Preserves normal development defaults and behavior when `DEMO_MODE=false`.
+   - Never exposes connection strings, passwords, or secrets in configuration error messages.
+
+2. `tests/conftest.py` *(Created)* — Root pytest configuration fixture for offline isolation:
+   - Sets `os.environ["APP_ENV"] = "testing"`, `os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")`, `os.environ.setdefault("DATABASE_NAME", "fieldnote_test_db")`, and `os.environ.setdefault("DEMO_MODE", "false")` prior to application import.
+   - Clears `get_settings.cache_clear()` to ensure isolated test environment settings.
+   - Prevents FastAPI application lifespan (`init_db_indexes`) and test clients from ever connecting to remote MongoDB Atlas clusters, even when a local `.env` contains live credentials.
+   - Reduced complete test suite execution time from >400 seconds to ~11 seconds by eliminating live network timeouts.
+
+3. `scripts/seed_demo_data.py` — Compensating GridFS Cleanup:
+   - Wrapped attachment metadata insertion (`db["attachments"].insert_one(att_doc)`) in a `try...except` block after GridFS upload (`fs.put(...)`).
+   - If metadata insertion fails, immediately executes compensating `fs.delete(file_id)` for the newly created GridFS file, preventing orphan binary payloads in the database.
+   - Preserves and re-raises the original exception for caller diagnostic reporting.
+   - Does not affect or delete pre-existing GridFS files.
+
+4. `scripts/seed_demo_data.py` — Unconditional Production Environment Guard:
+   - Added strict environment safeguard: checks `settings.app_env.lower() == "production"`.
+   - Refuses seeding unconditionally when `APP_ENV=production` with exit code 1 and descriptive error log, before any database connection attempt.
+   - Preserves existing `--force` / `--dry-run` behavior for non-production environments.
+
+5. `tests/test_demo_mode.py` — Added 5 regression tests:
+   - `test_demo_mode_database_fail_closed_when_omitted`
+   - `test_demo_mode_database_fail_closed_when_targeting_fieldnote_db`
+   - `test_dev_mode_preserves_default_database`
+   - `test_seed_demo_data_cleanup_on_attachment_metadata_failure`
+   - `test_seed_demo_data_refuses_production_environment`
+   - Full test suite verified: **174 passed**.
+
+6. `README.md` & `docs/ARCHITECTURE.md` — Updated documentation to detail fail-closed demo startup rules, compensating GridFS cleanup, production seed guards, and offline test runner configuration.
+
+---
+
+## Milestone 7 Log — Phase 2D.2: Render Deployment Preparation
+
+- **Date**: 2026-10-13
+- **Branch**: `main`
+- **Focus**: Production Deployment Preparation for Render PaaS Web Service.
+
+### Changes Implemented:
+
+1. `render.yaml` *(Created)* — Minimal Render Blueprint configuration:
+   - Declares `web` service running Python (`PYTHON_VERSION: 3.11.9`).
+   - `buildCommand`: Pre-installs CPU-only PyTorch wheel (`https://download.pytorch.org/whl/cpu`) before `requirements.txt` to minimize build size and time.
+   - `startCommand`: Runs `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1` to strictly constrain memory within Render's 512 MB free tier ceiling.
+   - `healthCheckPath`: Probes `/health` endpoint.
+   - Declares environment variables: `APP_ENV=production`, `DEMO_MODE=true`, `EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2`, with `MONGODB_URI` and `DATABASE_NAME` configured via Render dashboard (`sync: false`).
+
+2. `tests/test_deployment.py` *(Created)* — Automated unit verification:
+   - Verifies `render.yaml` file existence and YAML validity.
+   - Validates service type, start command `$PORT` binding and `--workers 1` flag.
+   - Validates build command CPU-only PyTorch index URL and `requirements.txt`.
+   - Validates `/health` health check path and declared environment variables.
+   - Confirms all required production runtime dependencies (FastAPI, Uvicorn, PyMongo, dnspython, Pydantic, Pydantic-Settings, Pillow, Sentence-Transformers, Jinja2, python-multipart) are declared in `requirements.txt`.
+
+3. `.gitignore` — Added `.cache/` to ignore local Hugging Face and ML caches.
+
+4. `README.md` & `docs/ARCHITECTURE.md` — Comprehensive deployment documentation:
+   - Documented step-by-step deployment procedure in Render.
+   - Documented operator seeding workflow using `scripts/seed_demo_data.py --force` targeting dedicated demo database outside production.
+   - Documented MongoDB Atlas network access trade-offs (risks of `0.0.0.0/0`, scoped database users, temporary access lists, static outbound IPs).
+   - Documented honest Render free-tier operational constraints (512 MB RAM, 15-minute inactivity spin-down, ephemeral disk, cold-start latency).
+
+5. Test Suite Verification:
+   - Full automated test suite passes: **176 passed** (including 2 new deployment verification tests).
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Deployment configuration to Render or Docker (Milestone 7 — Phase 2D).
+- [NOT IMPLEMENTED] Docker containerization (`Dockerfile` / `docker-compose.yml`) — deferred in favor of native Render Python runtime.
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
 - [NOT IMPLEMENTED] Authentication, authorization, or multi-tenant user accounts.
 - [NOT IMPLEMENTED] OCR, computer vision, or AI-generated captions.
 
 ---
 
-## Next Approved Milestone
+## Milestone Status Summary
 
-- **Milestone 7 — Phase 2D**: Production Deployment Preparation (Render / Docker)
-  - Focus: Containerization, production environment configuration, and deployment validation.
-  - Required before starting: Explicit user review and approval of Phase 2C.2.
+- **Phase 2D.1**: Public Demo Mode & Dependency Hardening — COMPLETE
+- **Phase 2D.1.1**: Targeted Safety Corrections — COMPLETE
+- **Phase 2D.2**: Render Deployment Preparation — COMPLETE
+- **Status**: Ready for final review, commit, and operator deployment to Render.

@@ -8,6 +8,7 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
+from app.config import check_demo_mode
 from app.db import get_database, get_gridfs
 from app.schemas import NoteCreate, NoteUpdate, NoteResponse
 from app.services.embedding import (
@@ -110,6 +111,7 @@ def build_notes_query(
     response_model=NoteResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new research note",
+    dependencies=[Depends(check_demo_mode)],
 )
 def create_note(
     note_in: NoteCreate,
@@ -239,6 +241,7 @@ def get_note(
     "/{note_id}",
     response_model=NoteResponse,
     summary="Update a research note by ID",
+    dependencies=[Depends(check_demo_mode)],
 )
 def update_note(
     note_id: str,
@@ -315,6 +318,7 @@ def update_note(
     "/{note_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a research note by ID with cascading attachment cleanup",
+    dependencies=[Depends(check_demo_mode)],
 )
 def delete_note(
     note_id: str,

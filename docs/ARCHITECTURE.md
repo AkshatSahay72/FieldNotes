@@ -54,6 +54,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
 | **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
 | **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A, 2B, 2C.1 & 2C.2)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, research dashboard with dual text/semantic search, note CRUD modals, Phase 2C.1 Evidence Gallery, and Phase 2C.2 Analytics Visualizations (overview cards, ranked tag bars, UTC activity timeline, evidence ranking with zero-toggle, top-25 limits, independent request-race protection, and fault-tolerant parallel loading) |
+| **Public Demo Mode & Seeding** | Read-only demo safety, synthetic seed script, database isolation | **IMPLEMENTED (Phase 2D.1)**: Declarative FastAPI route dependencies rejecting all write operations with HTTP 403 Forbidden; synthetic dataset seed script with Pillow-generated evidence; safety guard preventing accidental targeting of default development database |
 
 ---
 
@@ -74,6 +75,7 @@ The application uses **12-factor configuration** driven entirely by environment 
 - `MONGODB_SERVER_SELECTION_TIMEOUT_MS`: Timeout for MongoDB commands before failing fast (default: `2000`).
 - `UPLOAD_DIR`: Optional local filesystem storage directory.
 - `EMBEDDING_MODEL`: SentenceTransformers model identifier (default: `sentence-transformers/all-MiniLM-L6-v2`).
+- `DEMO_MODE`: Boolean flag enforcing read-only public demo mode (default: `false`). Rejects all write endpoints with HTTP 403 Forbidden.
 
 ---
 
@@ -476,3 +478,104 @@ Phase 2C.2 implements the interactive analytics visualizations on `/analytics` p
   - **Zero Charting Dependencies**: Built entirely with Vanilla JavaScript and CSS design tokens; no external visualization libraries.
   - **XSS Immunity**: User-controlled tags, titles, dates, and counts are rendered exclusively using `document.createElement` and `textContent`.
   - **Responsive Design**: Fluid CSS grid and flexbox layouts maintain full usability down to 320px viewport width without horizontal page scroll.
+
+---
+
+## 10. Public Demo Mode & Database Isolation Architecture (Phase 2D.1)
+
+Phase 2D.1 prepares Fieldnote for public demonstration using synthetic data with anonymous read-only access and server-side write rejection.
+
+### 10.1 Declarative Route Protection Layer
+- **Dependency Guard**: Implements `check_demo_mode` in `app/config.py` as a FastAPI route-level dependency (`dependencies=[Depends(check_demo_mode)]`).
+- **Pre-execution Interception**: When `DEMO_MODE=true` is active, write-capable routes (`POST /api/notes`, `PUT /api/notes/{id}`, `DELETE /api/notes/{id}`, `POST /api/notes/{id}/attachments`, `DELETE /api/notes/{id}/attachments/{id}`) abort immediately with **HTTP 403 Forbidden** prior to request body parsing, file stream consumption, or database access.
+- **Consistent Error Structure**: Emits standard non-sensitive JSON payload:
+  ```json
+  {"detail": "Operation not permitted in demo mode."}
+  ```
+- **Preserved Development Mode**: When `DEMO_MODE=false` (default), the guard passes silently, leaving all development workflows and tests unaffected.
+
+### 10.2 Preserved Anonymous Read-Only Surface
+All query, retrieval, and visualization endpoints remain open and fully functional:
+- Research observation feeds: `GET /api/notes` (with pagination, sort, and tag filtering).
+- Single note inspection: `GET /api/notes/{id}`.
+- Native MongoDB text search: `GET /api/notes?q=...` (`$text`).
+- Semantic vector search: `GET /api/search/semantic?query=...` (`$vectorSearch`).
+- Analytics pipelines: `GET /api/analytics/overview`, `/tags`, `/activity`, `/attachments`.
+- Evidence attachments: `GET /api/notes/{note_id}/attachments` and binary streaming `GET /api/notes/{note_id}/attachments/{id}/download`.
+- Web UI: HTML endpoints `/` and `/analytics` display a polite demo banner (`.demo-banner`) informing visitors that persistent modifications are disabled.
+
+### 10.3 Database Isolation & Fail-Closed Startup Strategy
+- **Explicit Database Selection**: Uses the 12-factor configuration setting `DATABASE_NAME` (e.g. `DATABASE_NAME=fieldnote_demo`).
+- **Fail-Closed Application Startup Validation**: In `app/config.py`, a Pydantic `@model_validator(mode="after")` enforces that when `DEMO_MODE=true`:
+  - `DATABASE_NAME` must be explicitly configured rather than relying on the default.
+  - `DATABASE_NAME` cannot target the default development database (`fieldnote_db`).
+  - If violated, the application refuses to start up with a clear configuration validation error.
+- **Non-destructive Isolation**: The primary development database (`fieldnote_db`) is untouched and retains its distinct document state.
+- **Seeding Development Guard**: Seeding utilities verify the target database name and automatically abort if targeting `fieldnote_db` without an explicit `--allow-default-db` override flag.
+
+### 10.4 Idempotent Synthetic Data Seeding (`scripts/seed_demo_data.py`)
+- **Academic Synthetic Data**: Populates clearly fictional research observations spanning multiple domains (subterranean mycology, lacustrine sediment stratigraphy, cryogenics, marine bioacoustics, drone telemetry, and synthetic polymer kinetics).
+- **Synthetic Evidence Images**: Generates deterministic, lightweight scientific charts and spectrograms in-memory using Pillow (`PIL.Image`, `ImageDraw`) without external image downloads or file system dependencies.
+- **Compensating GridFS Cleanup**: If inserting attachment metadata fails after an image chunk is uploaded to GridFS, the newly uploaded GridFS file is automatically cleaned up, preventing orphaned GridFS chunks while keeping pre-existing files intact.
+- **Production Environment Guard**: The seed script unconditionally refuses to execute if `APP_ENV=production`.
+- **Strict Idempotency**: Notes are matched on `title`; attachments are matched on `(note_id, filename)`. Existing documents are safely skipped, making repeated script execution zero-mutation and duplicate-free.
+- **No Public Seeding Endpoints**: Seeding is strictly an operator CLI command; no HTTP endpoints exist for seeding, resetting, or wiping data.
+
+### 10.5 Security Boundaries & Limitations
+- **Application-Layer Enforcement**: Demo protection is enforced within the FastAPI application layer. It is suited for academic viva demonstrations and public portfolio hosting.
+- **Non-Goals Preserved**: It deliberately does not implement user authentication, multi-tenancy, or MongoDB Atlas user role revocation. Database connections from the server still use authenticated connection strings configured via environment variables.
+
+### 10.6 Automated Test Suite Isolation (`tests/conftest.py`)
+- **Guaranteed Offline Execution**: Root pytest configuration (`tests/conftest.py`) forces `APP_ENV=testing` and injects dummy loopback settings (`mongodb://localhost:27017`) before test suite collection.
+- **Lifespan Protection**: Prevents the application `lifespan` hook from executing index checks against remote clusters during test startup even when a local `.env` contains live credentials.
+
+---
+
+## 11. Production Deployment Architecture (Render Web Service — Phase 2D.2)
+
+Fieldnote is engineered to deploy cleanly as a containerized web service on cloud PaaS providers, specifically tailored for Render.
+
+### 11.1 Infrastructure as Code Specification (`render.yaml`)
+Deployment topology is defined declaratively using Render's Infrastructure-as-Code Blueprint format:
+- **Service Type**: `web` (FastAPI ASGI application).
+- **Runtime**: `python` with `PYTHON_VERSION: 3.11.9`.
+- **Plan**: `free` (512 MB RAM, shared CPU).
+- **Health Check Path**: `/health` (probes ASGI availability and MongoDB Atlas ping response before routing live traffic).
+- **Binding**: Uses dynamic `$PORT` environment variable provided by Render.
+
+### 11.2 Process Model & Memory Optimization
+- **Single Uvicorn Worker**: The start command explicitly configures:
+  ```bash
+  uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+  ```
+- **Memory Footprint Breakdown**:
+  - Base Python + FastAPI + PyMongo + Jinja2: ~80–100 MB.
+  - PyTorch (CPU) + SentenceTransformers + `all-MiniLM-L6-v2` weights: ~200–250 MB.
+  - Total Resident Memory: ~280–350 MB.
+- **Out-of-Memory (OOM) Prevention**: Multi-worker configurations (`--workers 2+`) replicate the heavy PyTorch runtime across worker processes, exceeding the Render free tier's 512 MB memory limit and causing kernel OOM kills (`Exit Code 137`). Enforcing `--workers 1` ensures continuous stability within memory ceilings.
+
+### 11.3 CPU-Only PyTorch Build Optimization
+Standard PyPI wheels for `torch` default to CUDA-bundled packages exceeding 2.5 GB in download and disk space. To prevent build timeouts and excessive disk utilization on Render, the build command explicitly pre-installs the official CPU-only PyTorch wheel:
+```bash
+pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements.txt
+```
+When `sentence-transformers>=3.0.0` is subsequently installed from `requirements.txt`, its PyTorch dependency is already satisfied by the lightweight CPU wheel (~180 MB), cutting build duration to ~1–2 minutes.
+
+### 11.4 Embedding Model Caching & Deployment Lifecycle
+- **Dynamic Hub Loading**: The service relies on SentenceTransformers' native download resolution against the Hugging Face Hub (`sentence-transformers/all-MiniLM-L6-v2`).
+- **No Local Artifact Couplings**: The codebase does not depend on local developer model caches or large binary files committed to Git.
+- **Cache Persistence**: Cached weights are stored under Hugging Face's default cache structure and loaded into memory lazily upon the first semantic search request.
+
+### 11.5 Network Boundaries & MongoDB Atlas Security
+Render free and individual web services utilize dynamic outbound IPs without dedicated static allocations:
+- **Atlas Network Access**: Configuring `0.0.0.0/0` ("Allow Access from Anywhere") is required for dynamic IP routing on free tiers.
+- **Compensating Security Controls**:
+  - The database user account configured via `MONGODB_URI` must be restricted to `readWrite` strictly on the dedicated demo database (`fieldnote_demo`).
+  - Strict password entropy (32+ characters) and mandatory TLS encryption over SCRAM-SHA-256.
+  - Time-limited access entries in Atlas Network Access for evaluation windows.
+  - Upgrading to Render Team plans enables **Static Outbound IPs**, allowing exact IP whitelisting in Atlas.
+
+### 11.6 Operational Seeding Architecture
+- **Air-Gapped Seeding**: No seed or reset HTTP endpoints are exposed on the public web service.
+- **Out-of-Band Operator Execution**: Seeding is executed exclusively by an authorized operator from a trusted administrative environment targeting `DATABASE_NAME=fieldnote_demo` with `APP_ENV != production`.
+- **Production Guard Enforcement**: The seed script refuses execution if `APP_ENV=production`.

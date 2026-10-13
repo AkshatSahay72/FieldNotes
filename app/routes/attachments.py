@@ -11,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
+from app.config import check_demo_mode
 from app.db import get_database, get_gridfs
 from app.schemas import AttachmentResponse
 
@@ -128,6 +129,7 @@ def ensure_note_exists(note_oid: ObjectId, db: Database) -> dict:
     response_model=AttachmentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload image attachment for a note",
+    dependencies=[Depends(check_demo_mode)],
 )
 async def upload_attachment(
     note_id: str,
@@ -327,6 +329,7 @@ def download_attachment(
     "/{note_id}/attachments/{attachment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a single attachment",
+    dependencies=[Depends(check_demo_mode)],
 )
 def delete_attachment(
     note_id: str,

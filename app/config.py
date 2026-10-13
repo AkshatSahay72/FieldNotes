@@ -1,5 +1,6 @@
 from functools import lru_cache
-from pydantic import Field
+from fastapi import Depends, HTTPException, status
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_env: str = Field(default="development", alias="APP_ENV")
@@ -44,8 +46,46 @@ class Settings(BaseSettings):
         description="SentenceTransformers model identifier for vector embeddings",
     )
 
+    # Public demo mode protection (Phase 2D.1)
+    demo_mode: bool = Field(
+        default=False,
+        alias="DEMO_MODE",
+        description="Enforces read-only public demo mode, rejecting all mutation operations",
+    )
+
+    @model_validator(mode="after")
+    def validate_demo_database(self) -> "Settings":
+        """Ensure demo mode explicitly selects a dedicated demo database rather than falling back to dev DB."""
+        if self.demo_mode:
+            has_explicit_db = (
+                "database_name" in self.model_fields_set
+                or "DATABASE_NAME" in self.model_fields_set
+            )
+            if not has_explicit_db:
+                raise ValueError(
+                    "When DEMO_MODE is enabled, a dedicated demo database must be explicitly configured via DATABASE_NAME."
+                )
+            if self.database_name == "fieldnote_db":
+                raise ValueError(
+                    "When DEMO_MODE is enabled, DATABASE_NAME cannot target the default development database ('fieldnote_db'). "
+                    "Please specify a dedicated demo database (e.g. 'fieldnote_demo')."
+                )
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:
     """Return cached application settings singleton."""
     return Settings()
+
+
+def check_demo_mode(settings: Settings = Depends(get_settings)) -> None:
+    """Enforce read-only public demo mode protection.
+
+    Rejects write-capable API operations with HTTP 403 Forbidden when DEMO_MODE is active.
+    """
+    if settings.demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation not permitted in demo mode.",
+        )

@@ -66,6 +66,16 @@
     </div>
   </header>
 
+  {% if demo_mode %}
+  <!-- Public Demo Mode Announcement Banner -->
+  <aside class="demo-banner" role="status" aria-label="Public demonstration mode notice">
+    <div class="demo-banner-inner">
+      <span class="badge badge-accent">Demo Mode</span>
+      <span class="demo-banner-text">Public demonstration environment &mdash; persistent mutation operations are disabled (read-only).</span>
+    </div>
+  </aside>
+  {% endif %}
+
   <!-- Mobile Navigation Backdrop & Drawer -->
   <div class="mobile-nav-backdrop" id="mobile-nav-backdrop" aria-hidden="true"></div>
   <aside 

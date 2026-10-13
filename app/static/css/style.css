@@ -1785,3 +1785,43 @@ a:hover {
 .fill-secondary {
   background-color: #6366f1;
 }
+
+/* ==========================================================================
+   Public Demo Mode Banner
+   Phase 2D.1: Non-intrusive safety notification banner
+   ========================================================================== */
+.demo-banner {
+  background-color: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+}
+
+.demo-banner-inner {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.demo-banner-badge {
+  display: inline-block;
+  background-color: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  border-radius: var(--radius-sm);
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+}
+
+.demo-banner-text {
+  color: #78350f;
+  line-height: 1.4;
+}

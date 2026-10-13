@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+
+from app.config import Settings, get_settings
 
 _app_dir = Path(__file__).resolve().parent.parent
 _templates_dir = _app_dir / "templates"
@@ -14,7 +16,10 @@ router = APIRouter(include_in_schema=False)
 
 
 @router.get("/", response_class=HTMLResponse)
-def get_dashboard(request: Request) -> HTMLResponse:
+def get_dashboard(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> HTMLResponse:
     """Render the Fieldnote research dashboard shell."""
     return templates.TemplateResponse(
         request=request,
@@ -22,12 +27,16 @@ def get_dashboard(request: Request) -> HTMLResponse:
         context={
             "active_page": "dashboard",
             "current_year": datetime.now(timezone.utc).year,
+            "demo_mode": settings.demo_mode,
         },
     )
 
 
 @router.get("/analytics", response_class=HTMLResponse)
-def get_analytics(request: Request) -> HTMLResponse:
+def get_analytics(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> HTMLResponse:
     """Render the Fieldnote aggregation analytics shell."""
     return templates.TemplateResponse(
         request=request,
@@ -35,6 +44,7 @@ def get_analytics(request: Request) -> HTMLResponse:
         context={
             "active_page": "analytics",
             "current_year": datetime.now(timezone.utc).year,
+            "demo_mode": settings.demo_mode,
         },
     )
 

@@ -41,7 +41,7 @@ The project is built incrementally in strict, reviewable milestones:
 - **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
 - **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Completed)*
 - **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Completed & Fully Verified)*
-- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2B Dashboard Complete)*
+- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2D.1 Demo Safety & Seeding Complete)*
 
 Documentation files in `docs/` serve as the source of truth:
 - [PROJECT_SPEC.md](docs/PROJECT_SPEC.md): Scope, non-goals, and milestone acceptance criteria.
@@ -73,8 +73,50 @@ Fieldnote serves a mobile-ready, accessible researcher interface built with Fast
   - Section-level loading, error, retry, and empty states with independent request-race protection and parallel fetch via `Promise.allSettled`.
 - **Interactive Swagger API Documentation (`/docs`)**: OpenAPI schema and interactive endpoint testing.
 
-
 ---
+
+## Public Demo Mode & Synthetic Dataset Seeding
+
+To prepare Fieldnote for public demonstration without risking mutation of primary development data or exposing open write endpoints, Fieldnote supports a strictly enforced read-only demo mode backed by synthetic data isolation.
+
+### 1. Enabling Demo Mode & Fail-Closed Validation
+Configure the demo mode setting in your environment or `.env` file:
+```env
+DEMO_MODE=true
+DATABASE_NAME=fieldnote_demo
+```
+- **Fail-Closed Validation**: If `DEMO_MODE=true` is enabled, the application will **refuse to start up** unless `DATABASE_NAME` is explicitly supplied and points to a dedicated demo database. Omitting `DATABASE_NAME` or targeting the default development database (`fieldnote_db`) raises a configuration validation error at startup.
+
+### 2. Server-Side Protection
+When `DEMO_MODE=true` is set:
+- **Rejected Operations**: All write-capable API endpoints (`POST /api/notes`, `PUT /api/notes/{id}`, `DELETE /api/notes/{id}`, `POST /api/notes/{id}/attachments`, `DELETE /api/notes/{id}/attachments/{id}`) are rejected server-side before request processing with **HTTP 403 Forbidden** and response `{"detail": "Operation not permitted in demo mode."}`.
+- **Read Operations Preserved**: Note listing, categorical tag filtering, text search, semantic vector search, analytics overview, tag charts, activity timeline, attachment rankings, attachment listing, and image downloads remain completely accessible.
+- **UI Indication**: A non-intrusive status banner (`.demo-banner`) is displayed across all pages alerting viewers that mutations are disabled. Attempting a mutation through the UI triggers an immediate, non-sensitive toast notification explaining the restriction.
+
+### 3. Database Isolation & Controlled Seeding
+To isolate demonstration records from development data:
+1. Specify a dedicated demo database using `DATABASE_NAME` (e.g. `fieldnote_demo`).
+2. Populate the demo database using the controlled CLI seed script:
+   ```bash
+   # Explicit demo database selection via environment variable:
+   DATABASE_NAME=fieldnote_demo python scripts/seed_demo_data.py
+
+   # Or explicit CLI argument:
+   python scripts/seed_demo_data.py --database-name fieldnote_demo
+
+   # Dry-run inspection without database writes:
+   python scripts/seed_demo_data.py --database-name fieldnote_demo --dry-run
+   ```
+3. **Safety Guards**:
+   - **Production Guard**: The seed script unconditionally refuses to run if `APP_ENV=production`.
+   - **Development Guard**: If the target database is the default development database (`fieldnote_db`), the seed script will automatically abort unless the explicit flag `--allow-default-db` is provided.
+4. **Idempotency & Compensating Cleanup**: The script is safe to rerun at any time without duplicating notes or attachments. If a metadata record insertion fails after uploading an image chunk to GridFS, the newly uploaded GridFS file is automatically cleaned up.
+5. **No Public Seed/Reset Endpoints**: Seeding is exclusively an operator CLI tool; no public endpoints exist to trigger seeding, resets, or deletions.
+
+### 4. Security Limitations
+- Demo mode is an application-layer write protection mechanism intended for academic evaluations and portfolio demonstrations.
+- It does not introduce authentication, user registration, multi-tenancy, or MongoDB Atlas user role modifications.
+
 
 ## API Usage Examples
 
@@ -226,3 +268,70 @@ cp .env.example .env
 ```bash
 pytest -v
 ```
+
+---
+
+## Deployment to Render
+
+Fieldnote is configured for deployment as a Render Web Service using the blueprint [`render.yaml`](file:///d:/Coding/Major%20Project/FieldNotes/render.yaml).
+
+### 1. Step-by-Step Operator Deployment
+
+1. **Push Repository**: Ensure the latest code is on your GitHub repository.
+2. **Create Web Service on Render**:
+   - In the [Render Dashboard](https://dashboard.render.com), click **New +** > **Blueprint** (or **New +** > **Web Service**).
+   - Select your Fieldnote repository.
+   - If using Blueprints, Render detects `render.yaml` automatically.
+   - If creating manually:
+     - **Environment**: Python
+     - **Build Command**: `pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir -r requirements.txt`
+     - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1`
+     - **Health Check Path**: `/health`
+3. **Configure Environment Variables in Render Dashboard**:
+   - `APP_ENV`: `production`
+   - `DEMO_MODE`: `true`
+   - `MONGODB_URI`: Your MongoDB Atlas connection URI (`mongodb+srv://...`)
+   - `DATABASE_NAME`: Dedicated demo database (e.g. `fieldnote_demo`). *Must not be `fieldnote_db`.*
+   - `EMBEDDING_MODEL`: `sentence-transformers/all-MiniLM-L6-v2`
+   - `PYTHON_VERSION`: `3.11.9`
+4. **Deploy**: Trigger the initial build. The health check at `/health` verifies that the web service and database connection are operational.
+
+### 2. Seeding Synthetic Demo Data
+
+The public Render service runs in read-only demo mode and exposes **no** public seeding or reset endpoints. Seeding must be performed by the operator from a trusted environment:
+
+```bash
+# Set environment variables pointing to the dedicated demo database
+export MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority"
+export DATABASE_NAME="fieldnote_demo"
+export APP_ENV="development" # or "demo" — NEVER "production"
+
+# Run idempotent seed script with --force to confirm the demo database
+python scripts/seed_demo_data.py --force
+```
+
+- **Production Guard**: The seed script unconditionally refuses execution if `APP_ENV=production`.
+- **Compensating Cleanup**: If any GridFS metadata insertion fails during upload, the newly uploaded binary chunks are automatically deleted.
+- **Idempotency**: Rerunning the seed script performs zero duplicate insertions.
+
+### 3. MongoDB Atlas Network Access & Security Trade-offs
+
+Render web services on free and individual starter plans use dynamic outbound IP addresses that change across builds and container restarts.
+
+- **The `0.0.0.0/0` ("Allow Access from Anywhere") Trade-off**:
+  - Setting `0.0.0.0/0` in MongoDB Atlas Network Access is commonly used for dynamic hosts, but it exposes the database cluster port to the entire internet.
+  - **Security Mitigation**:
+    1. Create a dedicated Atlas database user with credentials scoped strictly to `readWrite` on `fieldnote_demo` only (not cluster admin or access to other databases).
+    2. Use a high-entropy, auto-generated password (32+ characters).
+    3. Use TLS and SCRAM-SHA-256 (default in MongoDB Atlas).
+    4. For temporary evaluations, utilize Atlas's "Temporary IP Access" feature with auto-expiration (e.g. 6 or 24 hours).
+    5. On Render Team/Enterprise plans, utilize Render's **Static Outbound IP** feature to whitelist specific IPs in Atlas Network Access, avoiding `0.0.0.0/0` entirely.
+
+### 4. Render Free-Tier Resource Limitations & Mitigations
+
+| Limitation | Impact | Mitigation in Fieldnote |
+| :--- | :--- | :--- |
+| **512 MB RAM Limit** | PyTorch + SentenceTransformers can exceed RAM with multiple workers. | Enforce `--workers 1` in start command. Runtime memory is ~280-350 MB. |
+| **Inactivity Spin-down** | Free instances sleep after 15 minutes of inactivity. | 30-60s cold start latency on first request. Health check `/health` verifies availability once warm. |
+| **Ephemeral Filesystem** | Files written to local disk are lost on container restart. | All demo evidence attachments are stored in MongoDB GridFS; demo mode rejects local uploads. |
+| **Build Timeout & Bandwidth** | Standard PyTorch CUDA wheels are ~2.5 GB and can exceed build limits. | Build command installs the CPU-only PyTorch wheel (`https://download.pytorch.org/whl/cpu`, ~180 MB) prior to `requirements.txt`. |
