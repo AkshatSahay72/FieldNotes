@@ -7,6 +7,46 @@
   "use strict";
 
   /* ==========================================================================
+     0. Cookie & CSRF Helper Functions
+     ========================================================================== */
+  function getCookie(name) {
+    if (!document.cookie) return null;
+    var match = document.cookie.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function getCsrfToken() {
+    return getCookie("fieldnote_csrf");
+  }
+
+  /* ==========================================================================
+     0.1. Owner Authentication & Session Actions
+     ========================================================================== */
+  function initAuthActions() {
+    function handleLogout(e) {
+      if (e) e.preventDefault();
+      var csrf = getCsrfToken();
+      var headers = { "Content-Type": "application/json" };
+      if (csrf) headers["x-csrf-token"] = csrf;
+      fetch("/api/auth/logout", {
+        method: "POST",
+        headers: headers,
+      }).finally(function () {
+        window.location.href = "/login";
+      });
+    }
+
+    var btnLogout = document.getElementById("btn-logout");
+    if (btnLogout) {
+      btnLogout.addEventListener("click", handleLogout);
+    }
+    var btnMobileLogout = document.getElementById("btn-mobile-logout");
+    if (btnMobileLogout) {
+      btnMobileLogout.addEventListener("click", handleLogout);
+    }
+  }
+
+  /* ==========================================================================
      1. Toast Notification System
      ========================================================================== */
   function showToast(message, type) {
@@ -936,9 +976,13 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving...";
 
+      var headers = { "Content-Type": "application/json" };
+      var csrfToken = getCsrfToken();
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
       fetch(url, {
         method: method,
-        headers: { "Content-Type": "application/json" },
+        headers: headers,
         body: JSON.stringify(payload),
       })
         .then(function (res) {
@@ -988,7 +1032,14 @@
       btnConfirmDelete.disabled = true;
       btnConfirmDelete.textContent = "Deleting...";
 
-      fetch("/api/notes/" + encodeURIComponent(noteId), { method: "DELETE" })
+      var deleteHeaders = {};
+      var csrfToken = getCsrfToken();
+      if (csrfToken) deleteHeaders["x-csrf-token"] = csrfToken;
+
+      fetch("/api/notes/" + encodeURIComponent(noteId), {
+        method: "DELETE",
+        headers: deleteHeaders,
+      })
         .then(function (res) {
           if (!res.ok && res.status !== 204) {
             return res.json().then(function (errData) {
@@ -1267,9 +1318,14 @@
       btnUploadEvidence.disabled = true;
       btnUploadEvidence.textContent = "Uploading...";
 
+      var uploadHeaders = {};
+      var csrfToken = getCsrfToken();
+      if (csrfToken) uploadHeaders["x-csrf-token"] = csrfToken;
+
       // Browser sets multipart/form-data boundary automatically when Content-Type is omitted
       fetch("/api/notes/" + encodeURIComponent(noteId) + "/attachments", {
         method: "POST",
+        headers: uploadHeaders,
         body: formData,
       })
         .then(function (res) {
@@ -1327,8 +1383,13 @@
       btnConfirmDeleteAttachment.disabled = true;
       btnConfirmDeleteAttachment.textContent = "Deleting...";
 
+      var delAttHeaders = {};
+      var csrfToken = getCsrfToken();
+      if (csrfToken) delAttHeaders["x-csrf-token"] = csrfToken;
+
       fetch("/api/notes/" + encodeURIComponent(noteId) + "/attachments/" + encodeURIComponent(attId), {
         method: "DELETE",
+        headers: delAttHeaders,
       })
         .then(function (res) {
           if (!res.ok && res.status !== 204) {
@@ -2006,6 +2067,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     initDynamicYear();
     initMobileNavigation();
+    initAuthActions();
     initDashboard();
     initAnalytics();
   });

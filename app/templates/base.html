@@ -54,6 +54,18 @@
           <li>
             <a href="/docs" class="nav-link" target="_blank" rel="noopener noreferrer">API Docs</a>
           </li>
+          {% if current_user %}
+          <li class="nav-user-item">
+            <span class="nav-user-email" title="{{ current_user.email }}">{{ current_user.email }}</span>
+          </li>
+          <li>
+            <button type="button" class="nav-link nav-btn-auth" id="btn-logout" aria-label="Sign out of your account">Sign Out</button>
+          </li>
+          {% elif not demo_mode %}
+          <li>
+            <a href="/login" class="nav-link nav-btn-auth {% if active_page == 'login' %}active{% endif %}" id="nav-link-login">Sign In</a>
+          </li>
+          {% endif %}
         </ul>
       </nav>
 
@@ -127,6 +139,18 @@
         <li>
           <a href="/docs" class="mobile-nav-link" target="_blank" rel="noopener noreferrer">API Documentation</a>
         </li>
+        {% if current_user %}
+        <li class="mobile-nav-user-item">
+          <span class="mobile-nav-user-email">{{ current_user.email }}</span>
+        </li>
+        <li>
+          <button type="button" class="mobile-nav-link nav-btn-auth" id="btn-mobile-logout">Sign Out</button>
+        </li>
+        {% elif not demo_mode %}
+        <li>
+          <a href="/login" class="mobile-nav-link {% if active_page == 'login' %}active{% endif %}" id="mobile-nav-login">Sign In</a>
+        </li>
+        {% endif %}
       </ul>
     </nav>
   </aside>

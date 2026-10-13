@@ -612,3 +612,83 @@ def test_demo_mode_banner_rendered_conditionally():
         res_normal = normal_client.get("/")
         assert res_normal.status_code == 200
         assert "demo-banner" not in res_normal.text
+
+
+def test_login_route_renders_and_redirects():
+    """Verify /login renders authentication view, and unauthenticated visitors are redirected in authenticated mode."""
+    from app.config import Settings, get_settings
+    from tests.test_auth import FakeAuthDatabase
+
+    mock_db = FakeAuthDatabase()
+    auth_settings = Settings(
+        MONGODB_URI="mongodb://localhost:27017",
+        DATABASE_NAME="fieldnote_auth_test",
+        APP_MODE="authenticated",
+        DEMO_MODE=False,
+        APP_ENV="testing",
+        _env_file=None,
+    )
+
+    app = create_app()
+    from app.db import get_database
+    app.dependency_overrides[get_settings] = lambda: auth_settings
+    app.dependency_overrides[get_database] = lambda: mock_db
+
+    with TestClient(app) as test_client:
+        # Unauthenticated user requesting / should get 302 redirect to /login
+        res_root = test_client.get("/", follow_redirects=False)
+        assert res_root.status_code == 302
+        assert res_root.headers["location"] == "/login"
+
+        # Unauthenticated user requesting /analytics should get 302 redirect to /login
+        res_analytics = test_client.get("/analytics", follow_redirects=False)
+        assert res_analytics.status_code == 302
+        assert res_analytics.headers["location"] == "/login"
+
+        # Direct GET /login renders 200 OK
+        res_login = test_client.get("/login")
+        assert res_login.status_code == 200
+        assert "text/html" in res_login.headers.get("content-type", "")
+        html = res_login.text
+        assert 'id="auth-email"' in html
+        assert 'id="auth-password"' in html
+        assert 'id="btn-auth-submit"' in html
+        assert "demo-banner" not in html
+        assert "Single-owner personal archive" in html or "single-owner" in html.lower()
+
+        # When no owner exists yet, view indicates initial setup
+        assert "Initial Owner Setup" in html or "Initial Setup" in html
+
+        # Register owner account via API
+        reg_res = test_client.post(
+            "/api/auth/register",
+            json={"email": "owner@example.com", "password": "SecurePassword123!"},
+        )
+        assert reg_res.status_code == 201
+
+        # Now when authenticated, visiting /login redirects to /
+        res_login_authed = test_client.get("/login", follow_redirects=False)
+        assert res_login_authed.status_code == 302
+        assert res_login_authed.headers["location"] == "/"
+
+        # Visiting / directly succeeds (200) and displays owner email and Sign Out button
+        res_home_authed = test_client.get("/", follow_redirects=False)
+        assert res_home_authed.status_code == 200
+        assert "owner@example.com" in res_home_authed.text
+        assert "btn-logout" in res_home_authed.text
+        assert "Sign Out" in res_home_authed.text
+        assert "demo-banner" not in res_home_authed.text
+
+        # Logout via API
+        from app.services.auth import get_active_session
+        csrf_token = reg_res.json()["csrf_token"]
+        logout_res = test_client.post(
+            "/api/auth/logout",
+            headers={"x-csrf-token": csrf_token},
+        )
+        assert logout_res.status_code == 200
+
+        # After logout, accessing / redirects back to /login
+        res_after_logout = test_client.get("/", follow_redirects=False)
+        assert res_after_logout.status_code == 302
+        assert res_after_logout.headers["location"] == "/login"

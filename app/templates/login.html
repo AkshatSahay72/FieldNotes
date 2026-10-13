@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Fieldnote — {% if has_owner %}Owner Sign In{% else %}Initial Setup{% endif %}{% endblock %}
+
+{% block description %}Secure single-owner authentication for Fieldnote memory archive.{% endblock %}
+
+{% block content %}
+<div class="auth-page-container">
+  <div class="auth-card" role="region" aria-labelledby="auth-heading">
+    <div class="auth-header">
+      <div class="auth-icon-wrapper">
+        <svg class="brand-icon auth-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="3" width="22" height="26" rx="3" fill="#0D9488" />
+          <rect x="5" y="3" width="4" height="26" rx="1" fill="#2DD4BF" />
+          <line x1="12" y1="9" x2="23" y2="9" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="14" x2="23" y2="14" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="19" x2="19" y2="19" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <circle cx="21" cy="23" r="2.25" fill="#FEF08A" />
+        </svg>
+      </div>
+      <h1 class="auth-title" id="auth-heading">
+        {% if has_owner %}Welcome Back{% else %}Initial Owner Setup{% endif %}
+      </h1>
+      <p class="auth-subtitle">
+        {% if has_owner %}
+          Sign in to access your personal memory journal and research notes.
+        {% else %}
+          Provision your primary owner account to activate private memory storage.
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="auth-alert auth-alert-error" id="auth-error-alert" role="alert" style="display: none;">
+      <span class="auth-alert-icon">!</span>
+      <span class="auth-alert-msg" id="auth-error-msg"></span>
+    </div>
+
+    <form class="auth-form" id="auth-form" novalidate>
+      <div class="form-group">
+        <label for="auth-email" class="form-label">Email Address</label>
+        <input 
+          type="email" 
+          id="auth-email" 
+          name="email" 
+          class="form-input" 
+          placeholder="owner@example.com" 
+          autocomplete="email" 
+          required 
+          autofocus
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="auth-password" class="form-label">Password</label>
+        <input 
+          type="password" 
+          id="auth-password" 
+          name="password" 
+          class="form-input" 
+          placeholder="••••••••••••" 
+          autocomplete="{% if has_owner %}current-password{% else %}new-password{% endif %}" 
+          required
+        >
+      </div>
+
+      <div class="auth-actions">
+        <button type="submit" class="btn btn-primary btn-block" id="btn-auth-submit">
+          <span id="btn-auth-text">{% if has_owner %}Sign In{% else %}Create Owner Account{% endif %}</span>
+          <span class="spinner" id="btn-auth-spinner" style="display: none;" aria-hidden="true"></span>
+        </button>
+      </div>
+    </form>
+
+    <div class="auth-footer-notice">
+      <p class="auth-footnote">
+        Fieldnote is a single-owner personal archive. Public registration is permanently disabled.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var form = document.getElementById("auth-form");
+    var emailInput = document.getElementById("auth-email");
+    var passwordInput = document.getElementById("auth-password");
+    var submitBtn = document.getElementById("btn-auth-submit");
+    var submitText = document.getElementById("btn-auth-text");
+    var submitSpinner = document.getElementById("btn-auth-spinner");
+    var errorAlert = document.getElementById("auth-error-alert");
+    var errorMsg = document.getElementById("auth-error-msg");
+    var isRegisterMode = {{ 'false' if has_owner else 'true' }};
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorAlert.style.display = "flex";
+    }
+
+    function hideError() {
+      errorAlert.style.display = "none";
+      errorMsg.textContent = "";
+    }
+
+    function setLoading(loading) {
+      submitBtn.disabled = loading;
+      if (loading) {
+        submitSpinner.style.display = "inline-block";
+        submitText.textContent = isRegisterMode ? "Setting up..." : "Authenticating...";
+      } else {
+        submitSpinner.style.display = "none";
+        submitText.textContent = isRegisterMode ? "Create Owner Account" : "Sign In";
+      }
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      hideError();
+
+      var email = emailInput.value.trim();
+      var password = passwordInput.value;
+
+      if (!email) {
+        showError("Please enter your email address.");
+        emailInput.focus();
+        return;
+      }
+
+      if (!password) {
+        showError("Please enter your password.");
+        passwordInput.focus();
+        return;
+      }
+
+      if (isRegisterMode && password.length < 8) {
+        showError("Password must be at least 8 characters long.");
+        passwordInput.focus();
+        return;
+      }
+
+      setLoading(true);
+
+      var endpoint = isRegisterMode ? "/api/auth/register" : "/api/auth/login";
+
+      fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({ email: email, password: password }),
+      })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          return { ok: res.ok, status: res.status, data: data };
+        }).catch(function () {
+          return { ok: res.ok, status: res.status, data: {} };
+        });
+      })
+      .then(function (result) {
+        setLoading(false);
+        if (result.ok) {
+          window.location.href = "/";
+        } else {
+          var detail = result.data.detail || "Authentication failed. Please verify your credentials.";
+          showError(detail);
+        }
+      })
+      .catch(function (err) {
+        setLoading(false);
+        showError("Network or server connection failed. Please try again.");
+      });
+    });
+  })();
+</script>
+{% endblock %}

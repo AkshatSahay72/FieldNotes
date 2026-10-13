@@ -39,6 +39,20 @@ class FakeAuthCollection:
     def __init__(self):
         self.docs = {}
 
+    def count_documents(self, filter_dict=None):
+        if not filter_dict:
+            return len(self.docs)
+        count = 0
+        for doc in self.docs.values():
+            match = True
+            for k, v in filter_dict.items():
+                if doc.get(k) != v:
+                    match = False
+                    break
+            if match:
+                count += 1
+        return count
+
     def insert_one(self, doc):
         oid = doc.get("_id") or ObjectId()
         stored = deepcopy(doc)
