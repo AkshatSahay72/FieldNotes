@@ -483,3 +483,88 @@ def test_demo_mode_blocks_writes_even_when_caller_is_authenticated():
 
     app_instance.dependency_overrides.clear()
     auth_rate_limiter.reset()
+
+
+def test_authenticated_mode_production_env_banner_absent_and_writes_allowed(monkeypatch):
+    """Confirm demo banner is absent and demo-mode write restrictions are not applied in authenticated mode."""
+    fake_db = FakeDatabase("fieldnote_private")
+    fake_fs = FakeGridFS()
+    fake_embed = FakeEmbeddingService()
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_MODE", "authenticated")
+    monkeypatch.setenv("DEMO_MODE", "false")
+    monkeypatch.setenv("DATABASE_NAME", "fieldnote_private")
+    monkeypatch.setenv("MONGODB_URI", "mongodb://localhost:27017")
+
+    auth_settings = Settings(_env_file=None)
+    assert auth_settings.resolved_app_mode == AppMode.AUTHENTICATED
+    assert auth_settings.demo_mode is False
+    assert auth_settings.is_demo_mode is False
+
+    app_instance = create_app()
+    app_instance.dependency_overrides[get_settings] = lambda: auth_settings
+    app_instance.dependency_overrides[get_database] = lambda: fake_db
+    app_instance.dependency_overrides[get_gridfs] = lambda: fake_fs
+    app_instance.dependency_overrides[get_embedding_service] = lambda: fake_embed
+    auth_rate_limiter.reset()
+
+    client = TestClient(app_instance, base_url="https://testserver")
+
+    # 1. UI Check: Demo banner must be completely absent from HTML responses
+    res_home = client.get("/")
+    assert res_home.status_code == 200
+    assert "demo-banner" not in res_home.text
+    assert "Public demonstration environment" not in res_home.text
+
+    res_analytics = client.get("/analytics")
+    assert res_analytics.status_code == 200
+    assert "demo-banner" not in res_analytics.text
+
+    # 2. API Check: Unauthenticated write must return 401 Unauthorized (NOT 403 demo-mode restriction)
+    res_unauth = client.post("/api/notes", json={"title": "Private Note", "content": "Content"})
+    assert res_unauth.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "Authentication required" in res_unauth.json()["detail"]
+    assert "demo mode" not in res_unauth.json()["detail"].lower()
+
+    # 3. API Check: Authenticated owner with CSRF can perform writes successfully
+    reg_res = client.post("/api/auth/register", json={
+        "email": "owner@example.com",
+        "password": "PasswordAuth123!",
+    })
+    assert reg_res.status_code == status.HTTP_201_CREATED
+    csrf_token = reg_res.json()["csrf_token"]
+    client.headers["x-csrf-token"] = csrf_token
+
+    res_write = client.post("/api/notes", json={"title": "Private Note", "content": "Owner content"})
+    assert res_write.status_code == status.HTTP_201_CREATED
+    assert res_write.json()["title"] == "Private Note"
+
+    app_instance.dependency_overrides.clear()
+    auth_rate_limiter.reset()
+
+
+def test_boolean_and_quoted_string_parsing_robustness():
+    """Verify that string representations of 'false' and quoted strings parse safely."""
+    for false_val in ["false", "False", "FALSE", "0", "no", "off"]:
+        s = Settings(
+            _env_file=None,
+            APP_MODE="authenticated",
+            DEMO_MODE=false_val,
+            DATABASE_NAME="fieldnote_private",
+            MONGODB_URI="mongodb://localhost:27017",
+        )
+        assert s.demo_mode is False
+        assert s.is_demo_mode is False
+        assert s.resolved_app_mode == AppMode.AUTHENTICATED
+
+    # Quoted string parsing (e.g. from environment variable injection)
+    s_quoted = Settings(
+        _env_file=None,
+        APP_MODE='"authenticated"',
+        DEMO_MODE="false",
+        DATABASE_NAME="fieldnote_private",
+        MONGODB_URI="mongodb://localhost:27017",
+    )
+    assert s_quoted.resolved_app_mode == AppMode.AUTHENTICATED
+    assert s_quoted.is_demo_mode is False

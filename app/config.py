@@ -2,7 +2,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional
 from fastapi import Depends, HTTPException, status
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -108,6 +108,31 @@ class Settings(BaseSettings):
         description="Rate limiting sliding window in seconds",
     )
 
+    @field_validator("demo_mode", mode="before")
+    @classmethod
+    def parse_demo_mode_boolean(cls, value: object) -> bool:
+        """Safely parse boolean values, ensuring string 'false' / '0' / 'off' evaluate to False."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().strip("'\"").strip().lower()
+            if normalized in ("true", "1", "yes", "on", "t"):
+                return True
+            if normalized in ("false", "0", "no", "off", "f", ""):
+                return False
+        return bool(value)
+
+    @field_validator("app_mode", mode="before")
+    @classmethod
+    def parse_app_mode_string(cls, value: object) -> Optional[str]:
+        """Strip surrounding quotes and whitespace from APP_MODE string."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip().strip("'\"").strip()
+            return cleaned or None
+        return str(value)
+
     @property
     def is_cookie_secure(self) -> bool:
         """Determine whether cookies should have the Secure flag.
@@ -122,7 +147,7 @@ class Settings(BaseSettings):
     def resolved_app_mode(self) -> AppMode:
         """Resolve effective operational mode from explicit APP_MODE, DEMO_MODE, or APP_ENV."""
         if self.app_mode:
-            normalized = self.app_mode.strip().lower()
+            normalized = self.app_mode.strip().strip("'\"").strip().lower()
             if normalized in ("demo",):
                 return AppMode.DEMO
             if normalized in ("authenticated", "personal", "private"):
@@ -136,7 +161,7 @@ class Settings(BaseSettings):
                 "'demo', 'authenticated' (or 'personal'/'private'), 'development', 'testing'."
             )
 
-        if self.demo_mode:
+        if self.demo_mode is True:
             return AppMode.DEMO
         if self.app_env.lower() == "testing":
             return AppMode.TESTING
@@ -147,6 +172,8 @@ class Settings(BaseSettings):
     @property
     def is_demo_mode(self) -> bool:
         """Determine whether application runs in read-only public demo mode."""
+        if self.resolved_app_mode == AppMode.AUTHENTICATED:
+            return False
         return self.resolved_app_mode == AppMode.DEMO or self.demo_mode is True
 
     @property
