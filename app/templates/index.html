@@ -268,4 +268,207 @@
     </button>
   </div>
 </div>
+
+<!-- ======================================================================
+     Evidence Gallery Modal Dialog
+     ====================================================================== -->
+<div
+  class="modal-backdrop"
+  id="evidence-modal-backdrop"
+  aria-hidden="true"
+></div>
+<div
+  class="modal-dialog modal-dialog-lg"
+  id="evidence-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="evidence-modal-title"
+  aria-hidden="true"
+>
+  <div class="modal-header">
+    <h2 id="evidence-modal-title">Evidence Gallery &amp; Attachments</h2>
+    <button
+      type="button"
+      id="btn-close-evidence-modal"
+      class="modal-close-btn"
+      aria-label="Close evidence gallery dialog"
+    >
+      &times;
+    </button>
+  </div>
+  <div class="modal-body evidence-modal-body">
+    <!-- Active Note Subtitle -->
+    <p class="evidence-note-subtitle">
+      Research Note: <strong id="evidence-modal-note-title"></strong>
+    </p>
+
+    <!-- Upload Evidence Form Panel -->
+    <section class="evidence-upload-panel" aria-label="Upload new evidence photo">
+      <h3 class="evidence-section-title">Upload Evidence Photo</h3>
+      <form id="evidence-upload-form" novalidate>
+        <div id="evidence-upload-error" class="modal-error-alert" style="display: none;" role="alert"></div>
+        <div class="upload-form-row">
+          <div class="form-group upload-file-group">
+            <label for="evidence-file-input" class="form-label">
+              Image File <span class="required" aria-hidden="true">*</span>
+            </label>
+            <input
+              type="file"
+              id="evidence-file-input"
+              class="form-control file-control"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              required
+            />
+            <small class="form-hint">Accepted formats: JPEG, PNG, WebP (Max 5 MB).</small>
+          </div>
+          <div class="form-group upload-caption-group">
+            <label for="evidence-caption-input" class="form-label">Caption</label>
+            <input
+              type="text"
+              id="evidence-caption-input"
+              class="form-control"
+              placeholder="e.g. Stratification layer at 15cm depth"
+              maxlength="256"
+            />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="evidence-desc-input" class="form-label">Contextual Description</label>
+          <textarea
+            id="evidence-desc-input"
+            class="form-control textarea-control"
+            rows="2"
+            placeholder="Field equipment, ambient temperature, specimen condition (optional)..."
+          ></textarea>
+        </div>
+        <div class="upload-btn-row">
+          <button type="submit" id="btn-upload-evidence" class="btn btn-primary">
+            Upload Evidence
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Evidence Gallery Display -->
+    <section class="evidence-gallery-panel" aria-label="Attached evidence photo gallery">
+      <h3 class="evidence-section-title">Attached Evidence Photos</h3>
+
+      <!-- Gallery Loading Indicator -->
+      <div id="evidence-loading" class="state-container state-container-sm" style="display: none;" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Loading attached evidence...</p>
+      </div>
+
+      <!-- Gallery Error State -->
+      <div id="evidence-error" class="state-container state-container-sm error-state" style="display: none;" role="alert">
+        <div class="error-icon" aria-hidden="true">!</div>
+        <p id="evidence-error-desc">Unable to load evidence attachments.</p>
+        <button type="button" id="btn-retry-evidence" class="btn btn-secondary">Retry</button>
+      </div>
+
+      <!-- Gallery Empty State -->
+      <div id="evidence-empty" class="state-container state-container-sm empty-state" style="display: none;">
+        <div class="empty-icon" aria-hidden="true">&empty;</div>
+        <h4>No Evidence Photos Attached</h4>
+        <p>Use the form above to attach specimen photos, cross-sections, or fieldwork observations.</p>
+      </div>
+
+      <!-- Evidence Cards Grid -->
+      <div id="evidence-grid" class="evidence-grid" aria-live="polite"></div>
+    </section>
+  </div>
+  <div class="modal-footer">
+    <button type="button" id="btn-done-evidence" class="btn btn-secondary">
+      Close Gallery
+    </button>
+  </div>
+</div>
+
+<!-- ======================================================================
+     Full-Size Lightbox Modal Dialog
+     ====================================================================== -->
+<div
+  class="modal-backdrop"
+  id="lightbox-modal-backdrop"
+  aria-hidden="true"
+></div>
+<div
+  class="modal-dialog modal-dialog-xl"
+  id="lightbox-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="lightbox-modal-title"
+  aria-hidden="true"
+>
+  <div class="modal-header">
+    <h2 id="lightbox-modal-title">Evidence Photo Preview</h2>
+    <button
+      type="button"
+      id="btn-close-lightbox-modal"
+      class="modal-close-btn"
+      aria-label="Close photo preview"
+    >
+      &times;
+    </button>
+  </div>
+  <div class="modal-body lightbox-modal-body">
+    <div class="lightbox-image-wrap">
+      <img id="lightbox-img" src="" alt="Full-size evidence preview" />
+    </div>
+    <div class="lightbox-details">
+      <h3 id="lightbox-caption" class="lightbox-caption"></h3>
+      <p id="lightbox-desc" class="lightbox-desc"></p>
+      <div id="lightbox-meta" class="lightbox-meta"></div>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" id="btn-close-lightbox" class="btn btn-secondary">
+      Close Preview
+    </button>
+  </div>
+</div>
+
+<!-- ======================================================================
+     Delete Attachment Confirmation Modal Dialog
+     ====================================================================== -->
+<div
+  class="modal-backdrop"
+  id="delete-attachment-modal-backdrop"
+  aria-hidden="true"
+></div>
+<div
+  class="modal-dialog modal-dialog-sm"
+  id="delete-attachment-modal"
+  role="alertdialog"
+  aria-modal="true"
+  aria-labelledby="delete-attachment-dialog-title"
+  aria-describedby="delete-attachment-dialog-desc"
+  aria-hidden="true"
+>
+  <div class="modal-header">
+    <h2 id="delete-attachment-dialog-title">Delete Evidence Photo</h2>
+    <button
+      type="button"
+      id="btn-close-delete-attachment-modal"
+      class="modal-close-btn"
+      aria-label="Close delete evidence confirmation dialog"
+    >
+      &times;
+    </button>
+  </div>
+  <div class="modal-body">
+    <p id="delete-attachment-dialog-desc">
+      Are you sure you want to delete evidence photo <strong id="delete-attachment-target-name"></strong>?
+      This will permanently remove the binary chunks from GridFS and delete the attachment record. The parent research note will remain unchanged.
+    </p>
+  </div>
+  <div class="modal-footer">
+    <button type="button" id="btn-cancel-delete-attachment" class="btn btn-secondary">
+      Cancel
+    </button>
+    <button type="button" id="btn-confirm-delete-attachment" class="btn btn-danger">
+      Delete Evidence
+    </button>
+  </div>
+</div>
 {% endblock %}

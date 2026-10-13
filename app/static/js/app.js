@@ -134,6 +134,11 @@
       noteToDelete: null,
       lastModalFocus: null,
       activeRequestId: 0,
+      activeEvidenceRequestId: 0,
+      activeEvidenceNote: null,
+      evidenceList: [],
+      attachmentToDelete: null,
+      activeLightboxTrigger: null,
     };
 
     // DOM Elements
@@ -164,7 +169,7 @@
     var pageIndicator = document.getElementById("page-indicator");
     var limitSelect = document.getElementById("limit-select");
 
-    // Modal Elements
+    // Modal Elements: Note Create / Edit
     var btnOpenCreate = document.getElementById("btn-open-create-modal");
     var noteModal = document.getElementById("note-modal");
     var noteModalBackdrop = document.getElementById("note-modal-backdrop");
@@ -178,12 +183,50 @@
     var noteTagsInput = document.getElementById("note-tags-input");
     var modalErrorAlert = document.getElementById("modal-error-alert");
 
+    // Modal Elements: Note Delete
     var deleteModal = document.getElementById("delete-modal");
     var deleteModalBackdrop = document.getElementById("delete-modal-backdrop");
     var deleteNoteTargetTitle = document.getElementById("delete-note-target-title");
     var btnCloseDeleteModal = document.getElementById("btn-close-delete-modal");
     var btnCancelDelete = document.getElementById("btn-cancel-delete");
     var btnConfirmDelete = document.getElementById("btn-confirm-delete");
+
+    // Modal Elements: Evidence Gallery & Upload
+    var evidenceModal = document.getElementById("evidence-modal");
+    var evidenceModalBackdrop = document.getElementById("evidence-modal-backdrop");
+    var evidenceModalNoteTitle = document.getElementById("evidence-modal-note-title");
+    var btnCloseEvidenceModal = document.getElementById("btn-close-evidence-modal");
+    var btnDoneEvidence = document.getElementById("btn-done-evidence");
+    var evidenceUploadForm = document.getElementById("evidence-upload-form");
+    var evidenceUploadError = document.getElementById("evidence-upload-error");
+    var evidenceFileInput = document.getElementById("evidence-file-input");
+    var evidenceCaptionInput = document.getElementById("evidence-caption-input");
+    var evidenceDescInput = document.getElementById("evidence-desc-input");
+    var btnUploadEvidence = document.getElementById("btn-upload-evidence");
+    var evidenceLoading = document.getElementById("evidence-loading");
+    var evidenceError = document.getElementById("evidence-error");
+    var evidenceErrorDesc = document.getElementById("evidence-error-desc");
+    var btnRetryEvidence = document.getElementById("btn-retry-evidence");
+    var evidenceEmpty = document.getElementById("evidence-empty");
+    var evidenceGrid = document.getElementById("evidence-grid");
+
+    // Modal Elements: Full-Size Lightbox
+    var lightboxModal = document.getElementById("lightbox-modal");
+    var lightboxModalBackdrop = document.getElementById("lightbox-modal-backdrop");
+    var btnCloseLightboxModal = document.getElementById("btn-close-lightbox-modal");
+    var btnCloseLightbox = document.getElementById("btn-close-lightbox");
+    var lightboxImg = document.getElementById("lightbox-img");
+    var lightboxCaption = document.getElementById("lightbox-caption");
+    var lightboxDesc = document.getElementById("lightbox-desc");
+    var lightboxMeta = document.getElementById("lightbox-meta");
+
+    // Modal Elements: Delete Attachment
+    var deleteAttachmentModal = document.getElementById("delete-attachment-modal");
+    var deleteAttachmentModalBackdrop = document.getElementById("delete-attachment-modal-backdrop");
+    var deleteAttachmentTargetName = document.getElementById("delete-attachment-target-name");
+    var btnCloseDeleteAttachmentModal = document.getElementById("btn-close-delete-attachment-modal");
+    var btnCancelDeleteAttachment = document.getElementById("btn-cancel-delete-attachment");
+    var btnConfirmDeleteAttachment = document.getElementById("btn-confirm-delete-attachment");
 
     // Format Date Helper
     function formatUtcDate(isoString) {
@@ -196,8 +239,19 @@
       }
     }
 
+    // Format File Size Helper
+    function formatFileSize(bytes) {
+      if (typeof bytes !== "number" || isNaN(bytes)) return "";
+      if (bytes < 1024) return bytes + " B";
+      var kb = bytes / 1024;
+      if (kb < 1024) return kb.toFixed(1) + " KB";
+      var mb = kb / 1024;
+      return mb.toFixed(2) + " MB";
+    }
+
     // Modal Show/Hide Helpers
     function openDialog(modal, backdrop, focusTarget) {
+      modal._previousFocus = document.activeElement;
       state.lastModalFocus = document.activeElement;
       modal.classList.add("is-open");
       backdrop.classList.add("is-open");
@@ -214,9 +268,14 @@
       backdrop.classList.remove("is-open");
       modal.setAttribute("aria-hidden", "true");
       backdrop.setAttribute("aria-hidden", "true");
-      document.body.style.overflow = "";
-      if (state.lastModalFocus && typeof state.lastModalFocus.focus === "function") {
-        state.lastModalFocus.focus();
+      var anyOtherOpen = document.querySelector(".modal-dialog.is-open");
+      if (!anyOtherOpen) {
+        document.body.style.overflow = "";
+      }
+      var target = modal._previousFocus || state.lastModalFocus;
+      modal._previousFocus = null;
+      if (target && typeof target.focus === "function") {
+        target.focus();
       }
     }
 
@@ -403,6 +462,16 @@
 
         var actions = document.createElement("div");
         actions.className = "note-card-actions";
+
+        var evidenceBtn = document.createElement("button");
+        evidenceBtn.type = "button";
+        evidenceBtn.className = "action-btn action-btn-accent";
+        evidenceBtn.textContent = "📷 Evidence";
+        evidenceBtn.setAttribute("aria-label", "View and manage evidence attachments for note: " + note.title);
+        evidenceBtn.addEventListener("click", function () {
+          openEvidenceModal(note.id, note.title, evidenceBtn);
+        });
+        actions.appendChild(evidenceBtn);
 
         var editBtn = document.createElement("button");
         editBtn.type = "button";
@@ -838,10 +907,376 @@
         });
     });
 
-    // Global Keydown: Escape closes dialog, Tab traps focus inside open dialog
+    // Evidence Modal & Gallery Controller
+    function openEvidenceModal(noteId, noteTitle, triggerBtn) {
+      state.activeEvidenceNote = { id: noteId, title: noteTitle };
+      evidenceModalNoteTitle.textContent = noteTitle;
+
+      evidenceUploadForm.reset();
+      evidenceUploadError.style.display = "none";
+      evidenceUploadError.textContent = "";
+
+      openDialog(evidenceModal, evidenceModalBackdrop, btnCloseEvidenceModal);
+      loadEvidence();
+    }
+
+    function closeEvidenceModal() {
+      state.activeEvidenceNote = null;
+      state.activeEvidenceRequestId++;
+      closeDialog(evidenceModal, evidenceModalBackdrop);
+    }
+
+    function loadEvidence(onComplete) {
+      if (!state.activeEvidenceNote) return;
+      var noteId = state.activeEvidenceNote.id;
+      var currentEvidenceRequestId = ++state.activeEvidenceRequestId;
+
+      evidenceLoading.style.display = "flex";
+      evidenceError.style.display = "none";
+      evidenceEmpty.style.display = "none";
+      evidenceGrid.style.display = "none";
+
+      function isRequestCurrent() {
+        return (
+          currentEvidenceRequestId === state.activeEvidenceRequestId &&
+          evidenceModal.classList.contains("is-open") &&
+          state.activeEvidenceNote !== null &&
+          state.activeEvidenceNote.id === noteId
+        );
+      }
+
+      fetch("/api/notes/" + encodeURIComponent(noteId) + "/attachments")
+        .then(function (res) {
+          if (!isRequestCurrent()) return null;
+          if (!res.ok) {
+            return res.json().then(function (errData) {
+              throw new Error((errData && errData.detail) || ("Failed to load attachments (HTTP " + res.status + ")"));
+            }).catch(function (parseErr) {
+              if (parseErr.message && parseErr.message.indexOf("Failed to load") !== -1) throw parseErr;
+              throw new Error("Failed to load attachments (HTTP " + res.status + ")");
+            });
+          }
+          return res.json();
+        })
+        .then(function (attachments) {
+          if (!isRequestCurrent() || attachments === null) return;
+          evidenceLoading.style.display = "none";
+          state.evidenceList = attachments || [];
+          if (!Array.isArray(attachments) || attachments.length === 0) {
+            evidenceEmpty.style.display = "flex";
+          } else {
+            evidenceGrid.style.display = "grid";
+            renderEvidenceGrid(attachments, noteId);
+          }
+          if (typeof onComplete === "function") {
+            onComplete(null, attachments);
+          }
+        })
+        .catch(function (err) {
+          if (!isRequestCurrent()) return;
+          evidenceLoading.style.display = "none";
+          evidenceError.style.display = "flex";
+          evidenceErrorDesc.textContent = err.message || "Failed to load evidence attachments.";
+          if (typeof onComplete === "function") {
+            onComplete(err);
+          }
+        });
+    }
+
+    function renderEvidenceGrid(attachments, noteId) {
+      evidenceGrid.innerHTML = "";
+
+      attachments.forEach(function (att) {
+        var card = document.createElement("article");
+        card.className = "evidence-card";
+
+        var thumbWrap = document.createElement("div");
+        thumbWrap.className = "evidence-thumb-wrap";
+
+        var img = document.createElement("img");
+        img.className = "evidence-thumb";
+        img.alt = att.caption || att.filename || "Evidence image preview";
+        img.loading = "lazy";
+        var downloadUrl = "/api/notes/" + encodeURIComponent(noteId) + "/attachments/" + encodeURIComponent(att.id) + "/download";
+        img.src = downloadUrl;
+
+        var brokenFallback = document.createElement("div");
+        brokenFallback.className = "evidence-broken";
+        brokenFallback.style.display = "none";
+        brokenFallback.textContent = "Image preview unavailable";
+
+        img.onerror = function () {
+          img.onerror = null; // Prevent retry loop
+          img.style.display = "none";
+          brokenFallback.style.display = "flex";
+        };
+
+        thumbWrap.appendChild(img);
+        thumbWrap.appendChild(brokenFallback);
+        card.appendChild(thumbWrap);
+
+        var info = document.createElement("div");
+        info.className = "evidence-info";
+
+        var captionEl = document.createElement("div");
+        captionEl.className = "evidence-caption";
+        captionEl.textContent = att.caption ? att.caption : att.filename;
+        info.appendChild(captionEl);
+
+        if (att.description) {
+          var descEl = document.createElement("div");
+          descEl.className = "evidence-desc";
+          descEl.textContent = att.description;
+          info.appendChild(descEl);
+        }
+
+        var metaEl = document.createElement("div");
+        metaEl.className = "evidence-meta";
+        var metaParts = [];
+        if (typeof att.file_size === "number") {
+          metaParts.push(formatFileSize(att.file_size));
+        }
+        if (att.created_at) {
+          metaParts.push(formatUtcDate(att.created_at));
+        }
+        metaEl.textContent = metaParts.join(" • ");
+        info.appendChild(metaEl);
+
+        card.appendChild(info);
+
+        var actions = document.createElement("div");
+        actions.className = "evidence-card-actions";
+
+        var viewBtn = document.createElement("button");
+        viewBtn.type = "button";
+        viewBtn.className = "action-btn";
+        viewBtn.textContent = "View Full";
+        viewBtn.setAttribute("aria-label", "View full image: " + (att.caption || att.filename));
+        viewBtn.addEventListener("click", function () {
+          openLightbox(att, noteId, viewBtn);
+        });
+        actions.appendChild(viewBtn);
+
+        var deleteAttBtn = document.createElement("button");
+        deleteAttBtn.type = "button";
+        deleteAttBtn.className = "action-btn action-btn-danger";
+        deleteAttBtn.textContent = "Delete";
+        deleteAttBtn.setAttribute("aria-label", "Delete attachment: " + (att.caption || att.filename));
+        deleteAttBtn.addEventListener("click", function () {
+          openDeleteAttachmentModal(att, noteId, deleteAttBtn);
+        });
+        actions.appendChild(deleteAttBtn);
+
+        card.appendChild(actions);
+        evidenceGrid.appendChild(card);
+      });
+    }
+
+    // Lightbox Controller
+    function openLightbox(att, noteId, triggerBtn) {
+      lightboxImg.src = "/api/notes/" + encodeURIComponent(noteId) + "/attachments/" + encodeURIComponent(att.id) + "/download";
+      lightboxImg.alt = att.caption || att.filename || "Evidence full view";
+      lightboxCaption.textContent = att.caption ? att.caption : att.filename;
+      lightboxDesc.textContent = att.description || "";
+      lightboxDesc.style.display = att.description ? "block" : "none";
+
+      var metaItems = [];
+      if (att.filename) metaItems.push("File: " + att.filename);
+      if (typeof att.file_size === "number") metaItems.push("Size: " + formatFileSize(att.file_size));
+      if (att.content_type) metaItems.push("Type: " + att.content_type);
+      if (att.created_at) metaItems.push("Uploaded: " + formatUtcDate(att.created_at));
+      lightboxMeta.textContent = metaItems.join(" • ");
+
+      openDialog(lightboxModal, lightboxModalBackdrop, btnCloseLightboxModal);
+    }
+
+    function closeLightbox() {
+      closeDialog(lightboxModal, lightboxModalBackdrop);
+      lightboxImg.src = "";
+    }
+
+    // Delete Attachment Controller
+    function openDeleteAttachmentModal(att, noteId, triggerBtn) {
+      state.attachmentToDelete = { id: att.id, noteId: noteId, filename: att.filename, caption: att.caption };
+      deleteAttachmentTargetName.textContent = '"' + (att.caption || att.filename) + '"';
+      openDialog(deleteAttachmentModal, deleteAttachmentModalBackdrop, btnCancelDeleteAttachment);
+    }
+
+    function closeDeleteAttachmentModal() {
+      state.attachmentToDelete = null;
+      closeDialog(deleteAttachmentModal, deleteAttachmentModalBackdrop);
+    }
+
+    // Upload Evidence Form Submit Listener
+    evidenceUploadForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      evidenceUploadError.style.display = "none";
+      evidenceUploadError.textContent = "";
+
+      if (!state.activeEvidenceNote) {
+        evidenceUploadError.textContent = "No note selected.";
+        evidenceUploadError.style.display = "block";
+        return;
+      }
+
+      var file = evidenceFileInput.files && evidenceFileInput.files[0];
+      if (!file) {
+        evidenceUploadError.textContent = "Please select an image file to upload.";
+        evidenceUploadError.style.display = "block";
+        evidenceFileInput.focus();
+        return;
+      }
+
+      // Client validation: 5 MB limit
+      var MAX_BYTES = 5 * 1024 * 1024;
+      if (file.size > MAX_BYTES) {
+        evidenceUploadError.textContent = "File size (" + formatFileSize(file.size) + ") exceeds the maximum allowed limit of 5.0 MB.";
+        evidenceUploadError.style.display = "block";
+        evidenceFileInput.focus();
+        return;
+      }
+
+      // Client validation: MIME type check
+      var allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+      if (file.type && allowedTypes.indexOf(file.type.toLowerCase()) === -1) {
+        evidenceUploadError.textContent = "Unsupported file type (" + file.type + "). Only JPEG, PNG, and WebP images are permitted.";
+        evidenceUploadError.style.display = "block";
+        evidenceFileInput.focus();
+        return;
+      }
+
+      var noteId = state.activeEvidenceNote.id;
+      var formData = new FormData();
+      formData.append("file", file);
+
+      var captionVal = evidenceCaptionInput.value.trim();
+      if (captionVal) {
+        formData.append("caption", captionVal);
+      }
+
+      var descVal = evidenceDescInput.value.trim();
+      if (descVal) {
+        formData.append("description", descVal);
+      }
+
+      btnUploadEvidence.disabled = true;
+      btnUploadEvidence.textContent = "Uploading...";
+
+      // Browser sets multipart/form-data boundary automatically when Content-Type is omitted
+      fetch("/api/notes/" + encodeURIComponent(noteId) + "/attachments", {
+        method: "POST",
+        body: formData,
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            return res.json().then(function (errData) {
+              var msg = (errData && errData.detail) || ("Upload failed with HTTP " + res.status);
+              if (Array.isArray(msg)) {
+                msg = msg.map(function (m) { return m.msg || JSON.stringify(m); }).join("; ");
+              }
+              throw new Error(msg);
+            }).catch(function (parseErr) {
+              if (parseErr.message && parseErr.message.indexOf("Upload failed") !== -1) throw parseErr;
+              throw new Error("Upload failed with HTTP " + res.status);
+            });
+          }
+          return res.json();
+        })
+        .then(function (savedAttachment) {
+          btnUploadEvidence.disabled = false;
+          btnUploadEvidence.textContent = "Upload Evidence";
+          evidenceUploadForm.reset();
+          showToast("Evidence attached successfully", "success");
+          loadEvidence();
+        })
+        .catch(function (err) {
+          btnUploadEvidence.disabled = false;
+          btnUploadEvidence.textContent = "Upload Evidence";
+          evidenceUploadError.textContent = err.message || "Failed to upload image.";
+          evidenceUploadError.style.display = "block";
+          showToast(err.message, "error");
+        });
+    });
+
+    // Evidence Modal Event Listeners
+    btnCloseEvidenceModal.addEventListener("click", closeEvidenceModal);
+    btnDoneEvidence.addEventListener("click", closeEvidenceModal);
+    evidenceModalBackdrop.addEventListener("click", closeEvidenceModal);
+    btnRetryEvidence.addEventListener("click", function () { loadEvidence(); });
+
+    // Lightbox Modal Event Listeners
+    btnCloseLightboxModal.addEventListener("click", closeLightbox);
+    btnCloseLightbox.addEventListener("click", closeLightbox);
+    lightboxModalBackdrop.addEventListener("click", closeLightbox);
+
+    // Delete Attachment Modal Event Listeners
+    btnCloseDeleteAttachmentModal.addEventListener("click", closeDeleteAttachmentModal);
+    btnCancelDeleteAttachment.addEventListener("click", closeDeleteAttachmentModal);
+    deleteAttachmentModalBackdrop.addEventListener("click", closeDeleteAttachmentModal);
+
+    btnConfirmDeleteAttachment.addEventListener("click", function () {
+      if (!state.attachmentToDelete) return;
+      var attId = state.attachmentToDelete.id;
+      var noteId = state.attachmentToDelete.noteId;
+
+      btnConfirmDeleteAttachment.disabled = true;
+      btnConfirmDeleteAttachment.textContent = "Deleting...";
+
+      fetch("/api/notes/" + encodeURIComponent(noteId) + "/attachments/" + encodeURIComponent(attId), {
+        method: "DELETE",
+      })
+        .then(function (res) {
+          if (!res.ok && res.status !== 204) {
+            return res.json().then(function (errData) {
+              throw new Error((errData && errData.detail) || "Failed to delete attachment.");
+            }).catch(function (parseErr) {
+              if (parseErr.message && parseErr.message.indexOf("Failed to delete") !== -1) throw parseErr;
+              throw new Error("Delete attachment failed with HTTP " + res.status);
+            });
+          }
+          // HTTP 204 No Content - do NOT parse JSON body
+          btnConfirmDeleteAttachment.disabled = false;
+          btnConfirmDeleteAttachment.textContent = "Delete Evidence";
+
+          // Avoid focusing a button that is about to be unmounted from DOM
+          deleteAttachmentModal._previousFocus = null;
+          closeDialog(deleteAttachmentModal, deleteAttachmentModalBackdrop);
+          state.attachmentToDelete = null;
+          showToast("Attachment deleted successfully", "success");
+
+          // Refresh gallery and restore focus to stable control inside evidenceModal
+          loadEvidence(function (err) {
+            if (evidenceModal.classList.contains("is-open")) {
+              if (err && btnRetryEvidence && typeof btnRetryEvidence.focus === "function") {
+                btnRetryEvidence.focus();
+              } else if (btnUploadEvidence && typeof btnUploadEvidence.focus === "function") {
+                btnUploadEvidence.focus();
+              } else if (btnCloseEvidenceModal && typeof btnCloseEvidenceModal.focus === "function") {
+                btnCloseEvidenceModal.focus();
+              }
+            }
+          });
+        })
+        .catch(function (err) {
+          btnConfirmDeleteAttachment.disabled = false;
+          btnConfirmDeleteAttachment.textContent = "Delete Evidence";
+          // On failure, preserve _previousFocus so user focus returns to delete button of the retained card
+          closeDialog(deleteAttachmentModal, deleteAttachmentModalBackdrop);
+          state.attachmentToDelete = null;
+          showToast(err.message || "Failed to delete attachment", "error");
+        });
+    });
+
+    // Global Keydown: Escape closes open dialog, Tab traps focus inside active dialog
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" || e.key === "Esc") {
-        if (noteModal.classList.contains("is-open")) {
+        if (lightboxModal.classList.contains("is-open")) {
+          closeLightbox();
+        } else if (deleteAttachmentModal.classList.contains("is-open")) {
+          closeDeleteAttachmentModal();
+        } else if (evidenceModal.classList.contains("is-open")) {
+          closeEvidenceModal();
+        } else if (noteModal.classList.contains("is-open")) {
           closeDialog(noteModal, noteModalBackdrop);
         } else if (deleteModal.classList.contains("is-open")) {
           closeDialog(deleteModal, deleteModalBackdrop);
@@ -850,7 +1285,13 @@
       }
 
       if (e.key === "Tab") {
-        if (noteModal.classList.contains("is-open")) {
+        if (lightboxModal.classList.contains("is-open")) {
+          trapModalFocus(lightboxModal, e);
+        } else if (deleteAttachmentModal.classList.contains("is-open")) {
+          trapModalFocus(deleteAttachmentModal, e);
+        } else if (evidenceModal.classList.contains("is-open")) {
+          trapModalFocus(evidenceModal, e);
+        } else if (noteModal.classList.contains("is-open")) {
           trapModalFocus(noteModal, e);
         } else if (deleteModal.classList.contains("is-open")) {
           trapModalFocus(deleteModal, e);

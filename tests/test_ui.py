@@ -305,3 +305,125 @@ def test_javascript_pagination_recovery_and_search_clearing(client: TestClient):
 
     # Synchronizes native search event
     assert 'searchInput.addEventListener("search"' in js_text
+
+
+def test_evidence_gallery_and_attachment_modals_markup(client: TestClient):
+    """Verify GET / renders Evidence modal, Lightbox modal, and Delete Attachment dialog markup."""
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+
+    # Evidence Modal and Upload Form
+    assert 'id="evidence-modal"' in html
+    assert 'id="evidence-modal-backdrop"' in html
+    assert 'id="evidence-modal-note-title"' in html
+    assert 'id="btn-close-evidence-modal"' in html
+    assert 'id="evidence-upload-form"' in html
+    assert 'id="evidence-file-input"' in html
+    assert 'id="evidence-caption-input"' in html
+    assert 'id="evidence-desc-input"' in html
+    assert 'id="btn-upload-evidence"' in html
+    assert 'accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"' in html
+
+    # Evidence Gallery Grid and Feedback States
+    assert 'id="evidence-grid"' in html
+    assert 'id="evidence-empty"' in html
+    assert 'id="evidence-loading"' in html
+    assert 'id="evidence-error"' in html
+    assert 'id="btn-retry-evidence"' in html
+
+    # Lightbox Modal
+    assert 'id="lightbox-modal"' in html
+    assert 'id="lightbox-modal-backdrop"' in html
+    assert 'id="btn-close-lightbox-modal"' in html
+    assert 'id="btn-close-lightbox"' in html
+    assert 'id="lightbox-img"' in html
+    assert 'id="lightbox-caption"' in html
+    assert 'id="lightbox-desc"' in html
+    assert 'id="lightbox-meta"' in html
+
+    # Delete Attachment Confirmation Modal
+    assert 'id="delete-attachment-modal"' in html
+    assert 'id="delete-attachment-modal-backdrop"' in html
+    assert 'id="delete-attachment-target-name"' in html
+    assert 'id="btn-close-delete-attachment-modal"' in html
+    assert 'id="btn-cancel-delete-attachment"' in html
+    assert 'id="btn-confirm-delete-attachment"' in html
+
+
+def test_javascript_evidence_gallery_and_upload_contracts(client: TestClient):
+    """Verify app.js implements the complete Phase 2C.1 evidence gallery and attachment contract."""
+    js_res = client.get("/static/js/app.js")
+    assert js_res.status_code == 200
+    js_text = js_res.text
+
+    # Note card integration
+    assert "📷 Evidence" in js_text
+    assert "action-btn-accent" in js_text
+    assert "openEvidenceModal(note.id, note.title, evidenceBtn)" in js_text
+
+    # Endpoints
+    assert "/attachments" in js_text
+    assert "/download" in js_text
+
+    # Multipart Upload without manual Content-Type
+    assert "new FormData()" in js_text
+    assert 'formData.append("file", file)' in js_text
+    assert 'formData.append("caption", captionVal)' in js_text
+    assert 'formData.append("description", descVal)' in js_text
+    assert "btnUploadEvidence.disabled = true" in js_text
+
+    # Client-side 5 MB file size and MIME checks
+    assert "5 * 1024 * 1024" in js_text
+    assert "image/jpeg" in js_text
+    assert "image/png" in js_text
+    assert "image/webp" in js_text
+
+    # Broken image load fallback
+    assert "img.onerror = null" in js_text
+    assert "evidence-broken" in js_text
+
+    # Delete attachment contract: HTTP 204 handling (no JSON parsing on 204)
+    assert 'res.status !== 204' in js_text
+    assert "btnConfirmDeleteAttachment.disabled = true" in js_text
+
+    # Keyboard accessibility: Escape and Tab handlers for evidence, lightbox, and delete attachment modals
+    assert "lightboxModal.classList.contains(\"is-open\")" in js_text
+    assert "deleteAttachmentModal.classList.contains(\"is-open\")" in js_text
+    assert "evidenceModal.classList.contains(\"is-open\")" in js_text
+    assert "trapModalFocus(lightboxModal, e)" in js_text
+    assert "trapModalFocus(deleteAttachmentModal, e)" in js_text
+    assert "trapModalFocus(evidenceModal, e)" in js_text
+
+
+def test_javascript_phase_2c1_corrections(client: TestClient):
+    """Verify Phase 2C.1 corrections: scroll-locking selector, stale evidence guarding, dismissal cleanup, and post-delete focus."""
+    js_res = client.get("/static/js/app.js")
+    assert js_res.status_code == 200
+    js_text = js_res.text
+
+    # 1. Correct modal dialog selector for scroll locking in closeDialog
+    assert 'document.querySelector(".modal-dialog.is-open")' in js_text
+    assert 'document.querySelector(".modal.is-open")' not in js_text
+
+    # 2. Stale evidence response protection with activeEvidenceRequestId and modal-open checks
+    assert "activeEvidenceRequestId: 0" in js_text
+    assert "var currentEvidenceRequestId = ++state.activeEvidenceRequestId;" in js_text
+    assert "function isRequestCurrent()" in js_text
+    assert "currentEvidenceRequestId === state.activeEvidenceRequestId" in js_text
+    assert 'evidenceModal.classList.contains("is-open")' in js_text
+    assert "state.activeEvidenceNote.id === noteId" in js_text
+    assert "function closeEvidenceModal()" in js_text
+    assert "state.activeEvidenceRequestId++;" in js_text
+
+    # 3. Clearing pending deletion state across all dismissal paths
+    assert "function closeDeleteAttachmentModal()" in js_text
+    assert "state.attachmentToDelete = null;" in js_text
+    assert "btnCloseDeleteAttachmentModal.addEventListener(\"click\", closeDeleteAttachmentModal)" in js_text
+    assert "btnCancelDeleteAttachment.addEventListener(\"click\", closeDeleteAttachmentModal)" in js_text
+    assert "deleteAttachmentModalBackdrop.addEventListener(\"click\", closeDeleteAttachmentModal)" in js_text
+
+    # 4. Keyboard focus preservation after deletion without targeting unmounted DOM elements
+    assert "deleteAttachmentModal._previousFocus = null;" in js_text
+    assert "btnUploadEvidence.focus()" in js_text
+    assert "btnRetryEvidence.focus()" in js_text

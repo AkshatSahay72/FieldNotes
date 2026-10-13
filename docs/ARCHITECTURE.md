@@ -53,7 +53,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestones 6B, 6D.4: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script verified on live Atlas with dry-run, idempotency, and concurrency protection) |
 | **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
 | **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
-| **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A Foundation)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, SVG favicon, and dual-mode 404 handler (`/`, `/analytics`, `/404`) |
+| **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A, 2B & 2C.1)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, research dashboard with dual text/semantic search, note CRUD modals, and Phase 2C.1 Evidence Gallery (GridFS image upload, thumbnail grid, full-size lightbox, attachment deletion) |
 
 ---
 
@@ -429,3 +429,25 @@ Phase 2B implements the interactive research dashboard controller in `app/static
   - **Honest Error Handling**: API error responses (`422`, `404`, `500`, `503`) are surfaced directly with descriptive messaging and contextual retry controls.
   - **Live Notifications**: Toast notification container (`#toast-container`) with `aria-live="polite"` announces async outcomes (creation, update, deletion, search errors).
   - **Accessibility**: Modals manage `aria-modal="true"`, focus trapping, `Escape`-key dismissal, and focus restoration to the triggering button.
+
+### 9.3 Evidence Gallery & Attachment Management Architecture (Milestone 7 — Phase 2C.1)
+
+Phase 2C.1 integrates research evidence attachment viewing and upload directly into the research notes workflow:
+
+- **Note Card Integration**:
+  - Each note card in the explorer displays an accessible `📷 Evidence` action button.
+  - Clicking opens the Evidence Gallery modal for the targeted note without triggering note editor opening or deletion.
+
+- **Client State & Direct Endpoint Integration**:
+  - `activeEvidenceNote`: `{ id, title }` tracking the parent note context.
+  - `evidenceList`: In-memory list of `AttachmentResponse` objects fetched from `GET /api/notes/{note_id}/attachments`.
+  - `attachmentToDelete`: `{ id, noteId, filename, caption }` staged for deletion confirmation.
+  - **Upload Endpoint**: Submits `POST /api/notes/{note_id}/attachments` via `multipart/form-data` with `file`, optional `caption`, and optional `description`. The client omits manual `Content-Type` headers so the browser sets the multipart boundary.
+  - **Thumbnail & Full-Size Image Source**: Loads directly from `GET /api/notes/{note_id}/attachments/{attachment_id}/download` (backend returns `Content-Disposition: inline` with genuine image MIME type).
+  - **Deletion Endpoint**: Calls `DELETE /api/notes/{note_id}/attachments/{attachment_id}`. On HTTP 204 No Content, updates the UI and refreshes the gallery without attempting to parse JSON.
+
+- **Defensive Design & Accessibility**:
+  - **Client File Validation**: Pre-validates 5.0 MB file size limit and MIME types (`image/jpeg`, `image/png`, `image/webp`) for immediate feedback while backend Pillow validation remains authoritative.
+  - **Broken Image Grace**: Prevents infinite retry loops by detaching `onerror` and rendering an accessible fallback indicator.
+  - **Stacked Modal Accessibility**: Supports stacked dialogs (Evidence Modal -> Lightbox / Delete Confirmation), trapping `Tab` and `Shift+Tab` focus in the topmost active dialog and restoring focus to the specific triggering button upon closure.
+  - **Safe Rendering**: All user-authored captions, descriptions, and filenames are rendered exclusively via DOM `textContent` and `document.createElement`.

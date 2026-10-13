@@ -1251,3 +1251,261 @@ a:hover {
   border-color: #bae6fd;
   color: #075985;
 }
+
+/* ==========================================================================
+   Milestone 7 — Phase 2C.1: Evidence Gallery & Attachments Management
+   ========================================================================== */
+
+.action-btn-accent {
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  border-color: var(--color-border);
+}
+
+.action-btn-accent:hover {
+  background-color: var(--color-primary-subtle);
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+}
+
+.modal-dialog-lg {
+  max-width: 780px;
+  width: 95%;
+}
+
+.modal-dialog-xl {
+  max-width: 920px;
+  width: 95%;
+}
+
+.evidence-modal-body {
+  max-height: calc(88vh - 140px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.evidence-note-subtitle {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.75rem;
+  margin-bottom: 0;
+}
+
+.evidence-section-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin-bottom: 0.75rem;
+}
+
+.evidence-upload-panel {
+  background-color: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.upload-form-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .upload-form-row {
+    grid-template-columns: 1.2fr 1fr;
+  }
+}
+
+.file-control {
+  padding: 0.4rem;
+}
+
+.upload-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.evidence-gallery-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.state-container-sm {
+  padding: 1.75rem 1rem;
+}
+
+.state-container-sm h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.state-container-sm p {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 480px) {
+  .evidence-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+.evidence-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.evidence-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.evidence-thumb-wrap {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background-color: var(--color-surface-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.evidence-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.evidence-broken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  color: var(--color-text-dim);
+  font-size: 0.75rem;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.evidence-broken-icon {
+  font-size: 1.5rem;
+}
+
+.evidence-card-body {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.evidence-caption {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.evidence-desc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+
+.evidence-meta {
+  font-size: 0.725rem;
+  color: var(--color-text-dim);
+  margin-top: auto;
+  padding-top: 0.35rem;
+}
+
+.evidence-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-surface-subtle);
+  gap: 0.5rem;
+}
+
+/* Lightbox Modal */
+.lightbox-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  align-items: center;
+  overflow-y: auto;
+  max-height: calc(88vh - 130px);
+}
+
+.lightbox-image-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: var(--color-surface-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  max-height: 60vh;
+}
+
+#lightbox-img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  display: block;
+}
+
+.lightbox-details {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.lightbox-caption {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+  margin-bottom: 0;
+}
+
+.lightbox-desc {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin-bottom: 0;
+}
+
+.lightbox-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+}

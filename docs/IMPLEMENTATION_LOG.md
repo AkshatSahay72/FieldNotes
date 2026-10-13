@@ -13,7 +13,7 @@
 | **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6C** | Semantic Search API (`/api/search/semantic`) | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6D** | Atlas Vector Search Index Provisioning & Live Verifications (6D.1–6D.4) | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2B Complete)** |
+| **Milestone 7** | Minimal Frontend & Deployment Preparation | **IN PROGRESS (Phase 2C.1 Complete)** |
 
 ---
 
@@ -506,10 +506,43 @@ Inserted 4 synthetic notes directly via PyMongo:
 
 ---
 
+## Milestone 7 Log — Phase 2C.1: Evidence Gallery & Attachments Management
+
+- **Date**: 2026-10-13
+- **Objective**: Implement the evidence gallery and attachments management UI in the Fieldnote application using existing attachment APIs (`GET /api/notes/{note_id}/attachments`, `POST /api/notes/{note_id}/attachments`, `DELETE /api/notes/{note_id}/attachments/{attachment_id}`, `GET /api/notes/{note_id}/attachments/{attachment_id}/download`) without modifying backend contracts, schemas, or database indexes.
+- **Verification Status**: **COMPLETED & FULLY TESTED**. Verified with 155 automated pytest tests (19 UI tests + 136 backend tests). Zero Atlas document mutations performed (notes count maintained at 0). Clean `git diff --check`.
+
+### Files Modified:
+1. `app/templates/index.html` — Added accessible Evidence Gallery modal (`#evidence-modal`) with image upload form panel, loading/empty/error states, gallery grid, full-size Lightbox modal (`#lightbox-modal`), and Delete Attachment confirmation dialog (`#delete-attachment-modal`).
+2. `app/static/css/style.css` — Added responsive styling for the `📷 Evidence` note card action button, evidence upload form rows, evidence photo grid and cards, thumbnail preview wrappers, broken-image indicators, caption/description metadata, card action buttons, and full-size image lightbox dialog.
+3. `app/static/js/app.js` — Extended dashboard controller:
+   - Note card integration: added `📷 Evidence` button triggering `openEvidenceModal(note.id, note.title, evidenceBtn)`.
+   - Gallery loader: fetches `GET /api/notes/{note_id}/attachments` and renders evidence cards with thumbnail images loaded directly from `/download`. Hardened with monotonic `activeEvidenceRequestId` and modal-open checks against out-of-order responses and modal closures.
+   - Upload form: handles multipart `FormData` submissions with client-side 5 MB file size and MIME checks (`image/jpeg`, `image/png`, `image/webp`), omitting manual `Content-Type` headers so the browser sets the boundary, with loading states and error alerts.
+   - Accessible lightbox: provides full-size image inspection with captions, descriptions, file size, content-type, uploaded timestamp, and focus restoration.
+   - Attachment deletion: triggers `DELETE /api/notes/{note_id}/attachments/{attachment_id}` with confirmation dialog, treats HTTP 204 as success (no JSON parsing on 204), clears staged deletion state across all dismissal paths, and routes focus to a stable modal control upon deletion completion.
+   - Keyboard accessibility: handles `Escape` key close and traps `Tab`/`Shift+Tab` focus in stacked dialogs; fixed `.modal-dialog.is-open` selector in `closeDialog` to preserve body scroll-locking during stacked modal dismissal.
+   - Safe rendering: user content rendered strictly via DOM `textContent` and `document.createElement`.
+4. `tests/test_ui.py` — Added unit and contract tests covering evidence modal and note-card action markup, multipart upload contracts, client validation, broken-image fallbacks, HTTP 204 deletion handling, and regression assertions for scroll-locking selectors, stale-request protection, dismissal cleanup, and post-delete focus.
+5. `docs/ARCHITECTURE.md` — Added Section 9.3 documenting Evidence Gallery architecture and updated component status.
+6. `docs/IMPLEMENTATION_LOG.md` — Recorded Phase 2C.1 completion and updated milestone overview.
+7. `README.md` — Updated Web Interface documentation with evidence gallery and attachment capabilities.
+
+### Key Architectural & Safety Decisions Made:
+- **Zero Backend API Changes**: Used existing attachment endpoints directly without modifying routes, schemas, or database models.
+- **Direct Image Streaming**: Utilized existing `/download` route (which serves `Content-Disposition: inline`) for thumbnails and full-size lightbox images without adding redundant thumbnail generation endpoints.
+- **HTTP 204 Integrity**: Handled HTTP 204 No Content correctly without attempting to parse JSON response bodies.
+- **Strict Stacked Modal Focus Trapping & Scroll-Lock**: Enhanced `openDialog` and `closeDialog` with `_previousFocus` tracking and `.modal-dialog.is-open` queries to preserve background scroll-lock until the final modal closes.
+- **Stale Async Protection**: `loadEvidence()` guards against out-of-order responses, modal close timing, and cross-note data contamination via monotonically increasing request IDs.
+- **Safe Content Rendering**: User-authored captions, descriptions, and file names rendered exclusively via `textContent`.
+- **Atlas Safety**: No live Atlas documents created or modified in automated tests; collection baseline verified at 0 documents.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Evidence gallery for GridFS image attachments and pipeline analytics visualizations (Milestone 7 — Phase 2C).
+- [NOT IMPLEMENTED] Aggregation pipeline analytics visualizations on `/analytics` (Milestone 7 — Phase 2C.2).
 - [NOT IMPLEMENTED] Deployment configuration to Render or Docker (Milestone 7 — Phase 2D).
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
 - [NOT IMPLEMENTED] Authentication, authorization, or multi-tenant user accounts.
@@ -519,6 +552,6 @@ The following capabilities remain explicitly **NOT IMPLEMENTED**:
 
 ## Next Approved Milestone
 
-- **Milestone 7 — Phase 2C**: Evidence Gallery & Analytics Visualizations
-  - Focus: Interactive GridFS attachment viewer/uploader and aggregation pipeline charts on `/analytics`.
-  - Required before starting: Explicit user approval to proceed.
+- **Milestone 7 — Phase 2C.2**: Analytics Visualizations & Aggregation Insights
+  - Focus: Interactive aggregation pipeline charts and metrics on `/analytics`.
+  - Required before starting: Explicit user review and approval of Phase 2C.1.

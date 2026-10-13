@@ -60,6 +60,12 @@ Fieldnote serves a mobile-ready, accessible researcher interface built with Fast
   - Interactive note authoring and editing modal dialogs with client validation.
   - Accessible delete confirmation modal dialogs (`role="alertdialog"`).
   - Responsive layout, accessible live toast feedback, and full keyboard navigation.
+  - **Evidence Gallery & Attachment Management**:
+    - Note-card action (`📷 Evidence`) opens dedicated attachment modal per note.
+    - Multipart image upload form (JPEG, PNG, WebP up to 5 MB) with client validation and loading states.
+    - Responsive thumbnail gallery streaming directly from PyMongo GridFS.
+    - Accessible full-size image lightbox modal with image metadata and keyboard navigation.
+    - Deletion confirmation dialog for removing attachments safely without deleting the parent note.
 - **Analytics & Pipeline Insights (`/analytics`)**: Aggregation pipeline visualization shell.
 - **Interactive Swagger API Documentation (`/docs`)**: OpenAPI schema and interactive endpoint testing.
 
