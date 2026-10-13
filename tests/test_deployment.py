@@ -66,6 +66,7 @@ def test_runtime_dependencies_declared() -> None:
         "sentence-transformers",
         "jinja2",
         "python-multipart",
+        "email-validator",
     ]
 
     for pkg in required_packages:
