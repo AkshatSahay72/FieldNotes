@@ -295,7 +295,7 @@ def test_backfill_cli_main_success(monkeypatch, capsys):
     assert "Backfill Summary" in captured.out
     assert "Dry Run:   True" in captured.out
     assert "Processed: 1" in captured.out
-    assert "Updated:   1" in captured.out
+    assert "Updated:   1 (simulated)" in captured.out
     assert "Failed:    0" in captured.out
 
 

@@ -12,8 +12,8 @@
 | **Milestone 5** | Analytics & Aggregation Pipelines | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6A & 6B** | Embedding Service, Vector Schema & Note Lifecycle | **COMPLETED & FULLY VERIFIED** |
 | **Milestone 6C** | Semantic Search API (`/api/search/semantic`) | **COMPLETED & FULLY VERIFIED** |
-| **Milestone 6D** | Atlas Vector Search Index Provisioning & Smoke Test | **NOT IMPLEMENTED** (Next Milestone) |
-| **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** |
+| **Milestone 6D** | Atlas Vector Search Index Provisioning & Live Verifications (6D.1–6D.4) | **COMPLETED & FULLY VERIFIED** |
+| **Milestone 7** | Minimal Frontend & Deployment Preparation | **NOT IMPLEMENTED** (Next Milestone) |
 
 ---
 
@@ -400,20 +400,64 @@ Created 3 synthetic research notes via `POST /api/notes`:
 
 ---
 
+## Milestone 6D.4 Log: Live Atlas Embedding Backfill Verification
+
+- **Date**: 2026-10-13
+- **Objective**: Verify the live embedding backfill script (`scripts/backfill_embeddings.py`) against MongoDB Atlas (`fieldnote_db.notes`), confirming dry-run safety, live batch backfill, idempotency, deterministic concurrency protection, and complete cleanup back to zero baseline documents.
+- **Verification Status**: **VERIFIED & CONFIRMED ON LIVE ATLAS**. All preflight checks passed, 4 synthetic legacy notes processed, dry-run mutated 0 documents, live backfill populated 384-dimensional embeddings matching the active model, second run updated 0 documents, concurrency protection rejected stale writes, and all test documents were cleanly removed.
+
+### Preflight Verification:
+- **Git Branch & HEAD**: `main` at `4412fef` (working tree clean).
+- **Atlas Connectivity**: Admin ping succeeded (`{"ok": 1.0}`).
+- **Baseline Document Count**: `0` in `fieldnote_db.notes`.
+- **Search Index Status**: `idx_notes_vector` status `READY`, `queryable: True`.
+- **Embedding Model**: `sentence-transformers/all-MiniLM-L6-v2` loaded and verified locally.
+
+### Script Code Audit Findings (`scripts/backfill_embeddings.py`):
+- **Candidate Filter**: Correctly targets notes missing `embedding`, having `embedding: None`, or with `embedding_model != target_model`.
+- **Dry-Run Mode**: Simulates processing and counts candidates without executing any database mutations.
+- **Batching**: Streams documents in configurable chunk sizes (default 100, tested at 10) to control memory overhead.
+- **Deterministic Concurrency Protection**: Updates are conditioned on `{"_id": doc["_id"], "updated_at": original_updated_at}`, preventing overwrites if a concurrent researcher edits the document during inference.
+- **Error Handling & Exit Codes**: Per-document exceptions are captured and counted; exit code is `0` on zero failures, `1` if any document fails.
+
+### Synthetic Disposable Test Fixtures (Run ID: `test-6d4-8d9e6345`):
+Inserted 4 synthetic notes directly via PyMongo:
+1. `6acdd9ec580d4f0a8b30f7d7`: Missing `embedding` and `embedding_model` ("Glacial Flow Measurements").
+2. `6acdd9ed580d4f0a8b30f7d8`: Missing `embedding` and `embedding_model` ("Volcanic Ash Spectroscopy").
+3. `6acdd9ed580d4f0a8b30f7d9`: Explicit `embedding: None`, missing `embedding_model` ("Deep Sea Hydrothermal Vents").
+4. `6acdd9ed580d4f0a8b30f7da`: Obsolete `embedding_model: "sentence-transformers/legacy-v1-obsolete"`, dummy 128-dim vector ("Atmospheric Ozone Depletion").
+
+### Step-by-Step Live Execution Results:
+
+| Phase | Executed Command | Exit Code | Reported Summary | Direct Atlas Verification | Result |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Dry-Run** | `python scripts/backfill_embeddings.py --dry-run` | `0` | Processed: 4, Updated: 4 (simulated), Failed: 0 | All 4 documents in MongoDB remained bit-for-bit identical to pre-test state; 0 writes performed | **PASS** |
+| **Live Backfill** | `python scripts/backfill_embeddings.py --batch-size 10` | `0` | Processed: 4, Updated: 4, Failed: 0 | All 4 documents verified with 384 finite floats, model `sentence-transformers/all-MiniLM-L6-v2`, max delta from reference < 1e-4; non-embedding fields untouched | **PASS** |
+| **Idempotency** | `python scripts/backfill_embeddings.py --batch-size 10` | `0` | Processed: 0, Updated: 0, Failed: 0 | Documents verified completely unmodified across both database reads; 0 updates performed | **PASS** |
+| **Concurrency Protection** | Controlled update test on 5th disposable note (`6acdda35580d4f0a8b30f7db`) | `N/A` | Conditional update with stale `updated_at` | `matched_count: 0`, `modified_count: 0`. Newer user content was preserved; stale embedding was rejected | **PASS** |
+
+### Mandatory Cleanup & Baseline Restoration:
+- Targeted deletion executed in a reliable `try/finally` block for all 5 recorded ObjectIds (`6acdd9ec580d4f0a8b30f7d7`, `6acdd9ed580d4f0a8b30f7d8`, `6acdd9ed580d4f0a8b30f7d9`, `6acdd9ed580d4f0a8b30f7da`, `6acdda35580d4f0a8b30f7db`).
+- Every ID verified as non-existent in MongoDB following deletion.
+- Final collection document count: **0** (strictly returned to baseline count of 0).
+- Secondary indexes: All 5 indexes remained intact.
+
+---
+
 ## Unimplemented Features (Strictly Marked)
 
 The following capabilities remain explicitly **NOT IMPLEMENTED**:
-- [NOT IMPLEMENTED] Live embedding backfill execution on Atlas (Milestone 6D.4).
 - [NOT IMPLEMENTED] Automatic index creation or index polling on application startup.
-- [NOT IMPLEMENTED] Frontend templates or Flask web server (Milestone 7).
-- [NOT IMPLEMENTED] Authentication, authorization, or user accounts.
+- [NOT IMPLEMENTED] Frontend templates or web user interface (Milestone 7).
+- [NOT IMPLEMENTED] Deployment to external hosting platforms (Milestone 7).
+- [NOT IMPLEMENTED] Authentication, authorization, or multi-tenant user accounts.
 - [NOT IMPLEMENTED] OCR, computer vision, or AI-generated captions.
 
 ---
 
 ## Next Approved Milestone
 
-- **Milestone 6D.4**: Live Atlas Embedding Backfill Verification
-  - Focus: Validating `scripts/backfill_embeddings.py` on live Atlas (seeding notes with missing embeddings, running idempotent batch backfill, verifying concurrency protection, and cleaning up test documents).
+- **Milestone 7**: Minimal Frontend & Deployment Preparation
+  - Focus: Minimal, responsive researcher web interface (dashboard, note authoring, image attachment viewer, semantic search UI) and production deployment configuration (e.g. Render / Docker).
   - Required before starting: Explicit user approval to proceed.
 

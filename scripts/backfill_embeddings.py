@@ -188,7 +188,8 @@ def main() -> int:
     print("\n--- Backfill Summary ---")
     print(f"Dry Run:   {args.dry_run}")
     print(f"Processed: {counts['processed']}")
-    print(f"Updated:   {counts['updated']}")
+    updated_display = f"{counts['updated']} (simulated)" if args.dry_run else f"{counts['updated']}"
+    print(f"Updated:   {updated_display}")
     print(f"Skipped:   {counts['skipped']}")
     print(f"Failed:    {counts['failed']}")
     print("------------------------\n")

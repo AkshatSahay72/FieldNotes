@@ -50,7 +50,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Querying & Text Search** | Tag filtering (`$in`), native text search (`$text`), pagination, deterministic sort | **IMPLEMENTED** (`GET /api/notes` with `tag`, `tags`, `q`, `skip`, `limit`, and `_id` tie-breaker) |
 | **Binary Storage (GridFS)** | PyMongo GridFS binary storage with bounded reading & streaming | **IMPLEMENTED** (`fs.files` & `fs.chunks` managed via PyMongo `GridFS`) |
 | **Aggregation Pipelines** | Multi-stage analytical queries | **IMPLEMENTED** (`$unwind`, `$match`, `$group`, `$sort`, `$project`, `$lookup`, `$dateToString`) |
-| **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestone 6B: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script) |
+| **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestones 6B, 6D.4: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script verified on live Atlas with dry-run, idempotency, and concurrency protection) |
 | **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
 | **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
 
@@ -323,7 +323,7 @@ Milestone 6C introduces the dedicated semantic search route (`app/routes/search.
   - Model loading/inference failures return HTTP `503 Service Unavailable` with clean messages.
   - Recognizable index-not-found / unready index failures from MongoDB return HTTP `503` explaining that the vector search index is unavailable.
   - Unrelated database errors return standard HTTP `503` without leaking credentials or stack traces.
-- **Scope Limitation**: Live semantic query validation and live backfill on Atlas are deferred to subsequent Milestone 6D phases (6D.3/6D.4).
+- **Live Verification**: Live semantic query validation verified on Atlas in Milestone 6D.3; live embedding backfill (dry-run, idempotency, concurrency protection) verified on Atlas in Milestone 6D.4.
 
 ### 8.3 Atlas Vector Search Index Provisioning (`idx_notes_vector`)
 
@@ -354,4 +354,4 @@ Milestone 6D.2 provisioned and verified the official Atlas Vector Search index o
   - Atlas Status: `READY`
   - Queryable: `True`
   - Notes Document Count: `0`
-  - *Note*: Live semantic query retrieval against research notes verified end-to-end on MongoDB Atlas in Milestone 6D.3; baseline collection state verified restored to 0 documents.
+  - *Note*: Live semantic query retrieval and live embedding backfill verified end-to-end on MongoDB Atlas in Milestones 6D.3 and 6D.4; baseline collection state verified restored to 0 documents.
