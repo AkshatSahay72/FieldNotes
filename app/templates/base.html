@@ -22,22 +22,31 @@
       <!-- Clickable Brand Logo navigating to / -->
       <a href="/" class="brand-logo" aria-label="Fieldnote Dashboard">
         <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect x="5" y="3" width="22" height="26" rx="3" fill="#0f172a" />
-          <rect x="5" y="3" width="4" height="26" rx="1" fill="#0284c7" />
-          <line x1="12" y1="9" x2="23" y2="9" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
-          <line x1="12" y1="14" x2="23" y2="14" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
-          <line x1="12" y1="19" x2="19" y2="19" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
-          <circle cx="21" cy="23" r="2.25" fill="#10b981" />
+          <rect x="5" y="3" width="22" height="26" rx="3" fill="#0D9488" />
+          <rect x="5" y="3" width="4" height="26" rx="1" fill="#2DD4BF" />
+          <line x1="12" y1="9" x2="23" y2="9" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="14" x2="23" y2="14" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="19" x2="19" y2="19" stroke="#E2E8F0" stroke-width="1.75" stroke-linecap="round" />
+          <circle cx="21" cy="23" r="2.25" fill="#FEF08A" />
         </svg>
         <span class="brand-text">Fieldnote</span>
-        <span class="brand-badge">Research</span>
+        <span class="brand-badge">Memory</span>
       </a>
 
       <!-- Desktop Navigation -->
       <nav class="desktop-nav" aria-label="Primary navigation">
         <ul class="nav-links">
           <li>
-            <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="/#capture" class="nav-link" id="nav-link-capture">Capture</a>
+          </li>
+          <li>
+            <a href="/#timeline" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" id="nav-link-timeline">Timeline</a>
+          </li>
+          <li>
+            <a href="/#recall" class="nav-link" id="nav-link-recall">Recall</a>
+          </li>
+          <li>
+            <a href="/#archive" class="nav-link" id="nav-link-archive">Archive</a>
           </li>
           <li>
             <a href="/analytics" class="nav-link {% if active_page == 'analytics' %}active{% endif %}">Analytics</a>
@@ -70,7 +79,7 @@
   <!-- Public Demo Mode Announcement Banner -->
   <aside class="demo-banner" role="status" aria-label="Public demonstration mode notice">
     <div class="demo-banner-inner">
-      <span class="badge badge-accent">Demo Mode</span>
+      <span class="demo-banner-badge">Demo Mode</span>
       <span class="demo-banner-text">Public demonstration environment &mdash; persistent mutation operations are disabled (read-only).</span>
     </div>
   </aside>
@@ -101,7 +110,16 @@
     <nav>
       <ul class="mobile-nav-links">
         <li>
-          <a href="/" class="mobile-nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+          <a href="/#capture" class="mobile-nav-link" id="mobile-nav-capture">Capture</a>
+        </li>
+        <li>
+          <a href="/#timeline" class="mobile-nav-link {% if active_page == 'dashboard' %}active{% endif %}" id="mobile-nav-timeline">Timeline</a>
+        </li>
+        <li>
+          <a href="/#recall" class="mobile-nav-link" id="mobile-nav-recall">Recall</a>
+        </li>
+        <li>
+          <a href="/#archive" class="mobile-nav-link" id="mobile-nav-archive">Archive</a>
         </li>
         <li>
           <a href="/analytics" class="mobile-nav-link {% if active_page == 'analytics' %}active{% endif %}">Analytics</a>

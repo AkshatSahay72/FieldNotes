@@ -53,6 +53,7 @@ DEFAULT_DEV_DATABASE_NAME = "fieldnote_db"
 SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     {
         "title": "Field Specimen Observation: Bioluminescent Fungi Strain Lumina-9",
+        "type": "discovery",
         "content": (
             "## Summary\n"
             "Preliminary field examination of *Mycena lux-synthetica* (Strain Lumina-9) "
@@ -71,6 +72,7 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     },
     {
         "title": "Soil Stratification and Geochemical Assay: Site Borehole Bravo-12",
+        "type": "research",
         "content": (
             "## Geochemical Profile\n"
             "Coring completed at Borehole Bravo-12 in ancient lacustrine sediment deposits. "
@@ -88,6 +90,7 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     },
     {
         "title": "Cryogenic Core Preservation Protocol: Glacial Archive Sample Arc-7",
+        "type": "learning",
         "content": (
             "## Standard Operating Procedure Trial\n"
             "Validation of cold-chain preservation protocols for synthetic glacial ice analogs.\n\n"
@@ -105,6 +108,7 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     },
     {
         "title": "Acoustic Telemetry Log: Marine Mammal Echo Pattern Beta",
+        "type": "memory",
         "content": (
             "## Hydrophone Acoustic Recording\n"
             "Hydrophone array H-3 deployed along continental slope at depth 240m.\n\n"
@@ -122,6 +126,7 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     },
     {
         "title": "Autonomous Sensor Drone Flight Log: Transect Quadrant 4",
+        "type": "idea",
         "content": (
             "## Aerial Environmental Survey\n"
             "Automated mission 4-B executed across riparian conservation zone.\n\n"
@@ -137,6 +142,7 @@ SYNTHETIC_NOTES: List[Dict[str, Any]] = [
     },
     {
         "title": "Enzymatic Degradation Kinetics: Synthetic Biopolymer PX-400",
+        "type": "research",
         "content": (
             "## Biodegradation Assay\n"
             "In vitro degradation kinetics of synthetic polyester-amide compound PX-400.\n\n"
@@ -286,6 +292,8 @@ def seed_demo_data(
             continue
 
         doc = dict(note_template)
+        if "type" not in doc:
+            doc["type"] = "memory"
         # Compute vector embedding if service is provided
         if embedding_service is not None:
             try:

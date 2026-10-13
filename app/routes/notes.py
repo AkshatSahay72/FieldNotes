@@ -42,6 +42,7 @@ def note_doc_to_response(doc: dict) -> NoteResponse:
         title=doc["title"],
         content=doc["content"],
         tags=doc.get("tags", []),
+        type=doc.get("type", "memory"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -85,16 +86,14 @@ def parse_and_validate_tags(
 def build_notes_query(
     tag_list: Optional[List[str]] = None,
     q: Optional[str] = None,
+    entry_type: Optional[str] = None,
 ) -> dict:
-    """Build a composable MongoDB query filter for tags and full-text search.
-    
-    - Tag filtering uses OR semantics: matches notes where 'tags' contains ANY of the given tags ($in).
-    - Text search uses native MongoDB $text operator ($search).
-    - If both are present, MongoDB applies implicit AND across the top-level keys.
-    """
+    """Build a composable MongoDB query filter for tags, full-text search, and optional type."""
     query: dict = {}
     if tag_list:
         query["tags"] = {"$in": tag_list}
+    if entry_type:
+        query["type"] = entry_type
     if q is not None:
         trimmed_q = q.strip()
         if not trimmed_q:
@@ -110,7 +109,7 @@ def build_notes_query(
     "",
     response_model=NoteResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new research note",
+    summary="Create a new research note or memory entry",
     dependencies=[Depends(check_demo_mode)],
 )
 def create_note(
@@ -134,6 +133,7 @@ def create_note(
         "title": note_in.title,
         "content": note_in.content,
         "tags": note_in.tags,
+        "type": note_in.type or "memory",
         "embedding": vector,
         "embedding_model": embedding_service.model_name,
         "created_at": now,
@@ -170,6 +170,11 @@ def list_notes(
         None,
         description="Text search query across note title and content using MongoDB full-text search.",
     ),
+    entry_type: Optional[str] = Query(
+        None,
+        alias="type",
+        description="Optional filter by entry type (journal, memory, research, idea, learning).",
+    ),
     skip: int = Query(
         0,
         ge=0,
@@ -188,7 +193,7 @@ def list_notes(
     Notes are returned in stable descending order: newest first by created_at, with _id as tie-breaker.
     """
     cleaned_tags = parse_and_validate_tags(tag=tag, tags=tags)
-    filter_query = build_notes_query(tag_list=cleaned_tags, q=q)
+    filter_query = build_notes_query(tag_list=cleaned_tags, q=q, entry_type=entry_type)
 
     try:
         cursor = (
@@ -278,6 +283,8 @@ def update_note(
         "tags": note_in.tags,
         "updated_at": now,
     }
+    if note_in.type is not None:
+        update_fields["type"] = note_in.type
 
     if needs_new_embedding:
         try:

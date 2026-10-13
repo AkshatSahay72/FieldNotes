@@ -395,15 +395,49 @@
     }
 
     // Render Notes in Grid
+    function getDayHeaderString(isoString) {
+      if (!isoString) return "";
+      try {
+        var d = new Date(isoString);
+        var now = new Date();
+        var isToday = d.getUTCFullYear() === now.getUTCFullYear() &&
+                      d.getUTCMonth() === now.getUTCMonth() &&
+                      d.getUTCDate() === now.getUTCDate();
+        if (isToday) return "Today";
+        var yesterday = new Date(now.getTime() - 86400000);
+        var isYesterday = d.getUTCFullYear() === yesterday.getUTCFullYear() &&
+                          d.getUTCMonth() === yesterday.getUTCMonth() &&
+                          d.getUTCDate() === yesterday.getUTCDate();
+        if (isYesterday) return "Yesterday";
+        var options = { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" };
+        return d.toLocaleDateString("en-US", options);
+      } catch (e) {
+        return "";
+      }
+    }
+
     function renderNotesGrid(notes, isSemantic) {
       notesGrid.innerHTML = "";
+      var lastDayHeader = null;
 
       notes.forEach(function (note) {
+        var currentDay = getDayHeaderString(note.created_at);
+        if (currentDay && currentDay !== lastDayHeader && !isSemantic) {
+          lastDayHeader = currentDay;
+          var dayDivider = document.createElement("div");
+          dayDivider.className = "timeline-day-divider";
+          var dayText = document.createElement("span");
+          dayText.className = "timeline-day-title";
+          dayText.textContent = currentDay;
+          dayDivider.appendChild(dayText);
+          notesGrid.appendChild(dayDivider);
+        }
+
         var card = document.createElement("article");
         card.className = "note-card";
         card.setAttribute("tabindex", "0");
 
-        // Header: Title + Optional Semantic Score Badge
+        // Header: Title + Optional Type Badge + Optional Semantic Score Badge
         var header = document.createElement("div");
         header.className = "note-card-header";
 
@@ -412,12 +446,22 @@
         title.textContent = note.title;
         header.appendChild(title);
 
+        var badgesWrap = document.createElement("div");
+        badgesWrap.className = "note-card-badges";
+
+        var entryType = (note.type || "memory").toLowerCase();
+        var typeBadge = document.createElement("span");
+        typeBadge.className = "type-badge type-badge-" + entryType;
+        typeBadge.textContent = entryType.charAt(0).toUpperCase() + entryType.slice(1);
+        badgesWrap.appendChild(typeBadge);
+
         if (isSemantic && typeof note.score === "number") {
           var scoreBadge = document.createElement("span");
           scoreBadge.className = "score-badge";
           scoreBadge.textContent = "Score: " + note.score.toFixed(4);
-          header.appendChild(scoreBadge);
+          badgesWrap.appendChild(scoreBadge);
         }
+        header.appendChild(badgesWrap);
         card.appendChild(header);
 
         // Body: Content (Safe textContent rendering)
@@ -761,7 +805,9 @@
     function openCreateModal() {
       noteForm.reset();
       noteEditId.value = "";
-      noteModalTitle.textContent = "Create Research Note";
+      noteModalTitle.textContent = "Capture Memory";
+      var noteTypeSelect = document.getElementById("note-type-select");
+      if (noteTypeSelect) noteTypeSelect.value = "memory";
       modalErrorAlert.style.display = "none";
       modalErrorAlert.textContent = "";
       openDialog(noteModal, noteModalBackdrop, noteTitleInput);
@@ -780,7 +826,9 @@
           noteTitleInput.value = note.title;
           noteContentInput.value = note.content;
           noteTagsInput.value = Array.isArray(note.tags) ? note.tags.join(", ") : "";
-          noteModalTitle.textContent = "Edit Research Note";
+          var noteTypeSelect = document.getElementById("note-type-select");
+          if (noteTypeSelect) noteTypeSelect.value = note.type || "memory";
+          noteModalTitle.textContent = "Edit Memory";
           openDialog(noteModal, noteModalBackdrop, noteTitleInput);
         })
         .catch(function (err) {
@@ -810,12 +858,27 @@
         }
       });
 
+      // Low-friction capture: auto-generate title if omitted by user
       if (!titleVal) {
-        modalErrorAlert.textContent = "Title is required and cannot be empty.";
+        if (contentVal && contentVal.trim()) {
+          var firstLine = contentVal.trim().split("\n")[0].replace(/^[#\s*-_]+/, "").trim();
+          titleVal = firstLine.length > 50 ? firstLine.substring(0, 47) + "..." : firstLine;
+        }
+        if (!titleVal) {
+          var now = new Date();
+          titleVal = "Memory on " + now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        }
+      }
+
+      if (!contentVal || !contentVal.trim()) {
+        modalErrorAlert.textContent = "Content is required to capture a memory.";
         modalErrorAlert.style.display = "block";
-        noteTitleInput.focus();
+        noteContentInput.focus();
         return;
       }
+
+      var noteTypeSelect = document.getElementById("note-type-select");
+      var typeVal = noteTypeSelect ? noteTypeSelect.value : "memory";
 
       var isEdit = Boolean(noteEditId.value);
       var method = isEdit ? "PUT" : "POST";
@@ -825,6 +888,7 @@
         title: titleVal,
         content: contentVal,
         tags: tagsVal,
+        type: typeVal,
       };
 
       var saveBtn = document.getElementById("btn-save-note");
@@ -1297,6 +1361,86 @@
           trapModalFocus(deleteModal, e);
         }
       }
+    });
+
+    // Memory Navigation Views Switcher (Timeline, Recall, Capture, Archive)
+    var navTabs = document.querySelectorAll(".memory-nav-tab");
+    var recallPrompts = document.getElementById("recall-prompts-section");
+    var tagFilterSec = document.getElementById("tag-filter-section");
+
+    function setView(viewName) {
+      navTabs.forEach(function (tab) {
+        var isCurrent = tab.getAttribute("data-view") === viewName;
+        tab.classList.toggle("active", isCurrent);
+        tab.setAttribute("aria-selected", isCurrent ? "true" : "false");
+      });
+
+      if (viewName === "timeline") {
+        if (recallPrompts) recallPrompts.style.display = "none";
+        if (tagFilterSec) tagFilterSec.style.display = "none";
+        if (state.searchMode !== "text") {
+          setSearchMode("text");
+        }
+        if (state.searchQuery || state.tagFilter) {
+          state.searchQuery = "";
+          searchInput.value = "";
+          state.tagFilter = "";
+          tagFilterInput.value = "";
+          btnClearTags.style.display = "none";
+          btnSearchClear.style.display = "none";
+          state.skip = 0;
+          loadNotes();
+        }
+      } else if (viewName === "recall") {
+        if (recallPrompts) recallPrompts.style.display = "block";
+        if (tagFilterSec) tagFilterSec.style.display = "none";
+        setSearchMode("semantic");
+        searchInput.focus();
+      } else if (viewName === "capture") {
+        openCreateModal();
+        setView("timeline");
+        return;
+      } else if (viewName === "archive") {
+        if (recallPrompts) recallPrompts.style.display = "none";
+        if (tagFilterSec) tagFilterSec.style.display = "block";
+      }
+    }
+
+    navTabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        setView(tab.getAttribute("data-view"));
+      });
+    });
+
+    // Hash navigation support: #capture, #timeline, #recall, #archive
+    function checkHashRoute() {
+      var hash = window.location.hash.replace("#", "").toLowerCase();
+      if (hash === "capture" || hash === "recall" || hash === "archive" || hash === "timeline") {
+        setView(hash);
+      }
+    }
+    window.addEventListener("hashchange", checkHashRoute);
+    if (window.location.hash) {
+      checkHashRoute();
+    } else {
+      // Default to Timeline clean view
+      if (recallPrompts) recallPrompts.style.display = "none";
+      if (tagFilterSec) tagFilterSec.style.display = "none";
+    }
+
+    // Natural Language Recall Prompt Suggestion Chips
+    var promptChips = document.querySelectorAll(".recall-prompt-chip");
+    promptChips.forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        var query = chip.getAttribute("data-query");
+        if (!query) return;
+        searchInput.value = query;
+        state.searchQuery = query;
+        btnSearchClear.style.display = "inline-flex";
+        setSearchMode("semantic");
+        state.skip = 0;
+        loadNotes();
+      });
     });
 
     // Initial Load of Notes

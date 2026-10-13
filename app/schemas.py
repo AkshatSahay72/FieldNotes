@@ -47,6 +47,11 @@ class NoteCreate(BaseModel):
         description="Categorical tags for filtering and organization",
         examples=[["soil", "moisture", "fieldwork"]],
     )
+    type: Optional[str] = Field(
+        default="memory",
+        description="Optional entry classification: journal, memory, research, idea, learning",
+        examples=["memory"],
+    )
 
     @field_validator("title")
     @classmethod
@@ -58,7 +63,7 @@ class NoteCreate(BaseModel):
 
 
 class NoteUpdate(BaseModel):
-    """Schema for updating an existing research note."""
+    """Schema for updating an existing research note or memory entry."""
 
     title: str = Field(
         ...,
@@ -72,6 +77,10 @@ class NoteUpdate(BaseModel):
     tags: List[str] = Field(
         default_factory=list,
         description="Updated categorical tags",
+    )
+    type: Optional[str] = Field(
+        default=None,
+        description="Optional updated entry classification: journal, memory, research, idea, learning",
     )
 
     @field_validator("title")
@@ -94,6 +103,11 @@ class NoteResponse(BaseModel):
     title: str
     content: str
     tags: List[str] = Field(default_factory=list)
+    type: Optional[str] = Field(
+        default="memory",
+        description="Entry classification: journal, memory, research, idea, learning",
+        examples=["memory"],
+    )
     created_at: datetime
     updated_at: datetime
 

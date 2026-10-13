@@ -69,6 +69,10 @@ class FakeCollection:
                     doc_tags = doc.get("tags", [])
                     if not any(t in doc_tags for t in in_tags):
                         match = False
+                # Handle type filter: {"type": entry_type}
+                if "type" in filter_dict:
+                    if doc.get("type", "memory") != filter_dict["type"]:
+                        match = False
                 # Handle $text search: {"$text": {"$search": search_term}}
                 if "$text" in filter_dict:
                     search_term = filter_dict["$text"].get("$search", "").lower()
@@ -798,3 +802,43 @@ def test_update_note_fails_when_embedding_fails_without_modifying_db(client, fak
     stored = fake_db["notes"].docs[note_id]
     assert stored["title"] == "Original Title"
     assert stored["content"] == "Original content."
+
+
+def test_create_note_with_default_and_custom_type(client):
+    """Verify newly created notes default to type 'memory' or preserve provided type."""
+    # 1. Default type
+    res_default = client.post(
+        "/api/notes",
+        json={"title": "Default Type Note", "content": "Checking default type."},
+    )
+    assert res_default.status_code == 201
+    assert res_default.json()["type"] == "memory"
+
+    # 2. Explicit custom types
+    for custom_type in ["journal", "idea", "learning", "research"]:
+        res_custom = client.post(
+            "/api/notes",
+            json={
+                "title": f"Test {custom_type.capitalize()}",
+                "content": f"Content for {custom_type}.",
+                "type": custom_type,
+            },
+        )
+        assert res_custom.status_code == 201
+        assert res_custom.json()["type"] == custom_type
+
+
+def test_filter_notes_by_type(client):
+    """Verify notes can be filtered by type parameter."""
+    client.post("/api/notes", json={"title": "Idea 1", "content": "My cool idea.", "type": "idea"})
+    client.post("/api/notes", json={"title": "Journal 1", "content": "Today was calm.", "type": "journal"})
+
+    res_idea = client.get("/api/notes?type=idea")
+    assert res_idea.status_code == 200
+    notes = res_idea.json()
+    assert all(n["type"] == "idea" for n in notes)
+
+    res_journal = client.get("/api/notes?type=journal")
+    assert res_journal.status_code == 200
+    notes_j = res_journal.json()
+    assert all(n["type"] == "journal" for n in notes_j)
