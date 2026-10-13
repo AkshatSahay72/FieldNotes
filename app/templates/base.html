@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Fieldnote — Research Notes &amp; Evidence Management{% endblock %}</title>
+  <meta name="description" content="{% block description %}A lightweight research observation and evidence management system powered by MongoDB Atlas Vector Search.{% endblock %}">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Accessibility: Skip Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <!-- Global Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <!-- Clickable Brand Logo navigating to / -->
+      <a href="/" class="brand-logo" aria-label="Fieldnote Dashboard">
+        <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="3" width="22" height="26" rx="3" fill="#0f172a" />
+          <rect x="5" y="3" width="4" height="26" rx="1" fill="#0284c7" />
+          <line x1="12" y1="9" x2="23" y2="9" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="14" x2="23" y2="14" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+          <line x1="12" y1="19" x2="19" y2="19" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+          <circle cx="21" cy="23" r="2.25" fill="#10b981" />
+        </svg>
+        <span class="brand-text">Fieldnote</span>
+        <span class="brand-badge">Research</span>
+      </a>
+
+      <!-- Desktop Navigation -->
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <ul class="nav-links">
+          <li>
+            <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+          </li>
+          <li>
+            <a href="/analytics" class="nav-link {% if active_page == 'analytics' %}active{% endif %}">Analytics</a>
+          </li>
+          <li>
+            <a href="/docs" class="nav-link" target="_blank" rel="noopener noreferrer">API Docs</a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Mobile Hamburger Menu Button -->
+      <button 
+        type="button" 
+        class="mobile-menu-btn" 
+        id="mobile-menu-toggle"
+        aria-label="Toggle navigation menu" 
+        aria-expanded="false" 
+        aria-controls="mobile-nav-drawer"
+      >
+        <svg class="hamburger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile Navigation Backdrop & Drawer -->
+  <div class="mobile-nav-backdrop" id="mobile-nav-backdrop" aria-hidden="true"></div>
+  <aside 
+    class="mobile-nav-drawer" 
+    id="mobile-nav-drawer" 
+    aria-label="Mobile navigation" 
+    aria-hidden="true"
+  >
+    <div class="mobile-nav-header">
+      <span class="mobile-nav-title">Menu</span>
+      <button 
+        type="button" 
+        class="mobile-close-btn" 
+        id="mobile-menu-close" 
+        aria-label="Close navigation menu"
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <nav>
+      <ul class="mobile-nav-links">
+        <li>
+          <a href="/" class="mobile-nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+        </li>
+        <li>
+          <a href="/analytics" class="mobile-nav-link {% if active_page == 'analytics' %}active{% endif %}">Analytics</a>
+        </li>
+        <li>
+          <a href="/docs" class="mobile-nav-link" target="_blank" rel="noopener noreferrer">API Documentation</a>
+        </li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- Main Page Content -->
+  <main id="main-content" class="site-main">
+    <div class="container">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p class="footer-copy">
+        &copy; <span id="current-year">{{ current_year }}</span> Fieldnote &mdash; Research Notes &amp; Evidence Management System.
+      </p>
+      <ul class="footer-links">
+        <li><a href="/" class="footer-link">Dashboard</a></li>
+        <li><a href="/analytics" class="footer-link">Analytics</a></li>
+        <li><a href="/docs" class="footer-link" target="_blank" rel="noopener noreferrer">API Docs</a></li>
+        <li><a href="/api/health" class="footer-link" target="_blank" rel="noopener noreferrer">Health Status</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- Shared Navigation Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

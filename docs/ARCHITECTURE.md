@@ -53,6 +53,7 @@ Fieldnote follows a layered, decoupled service architecture designed for straigh
 | **Embedding Service & Lifecycle** | In-process vector embeddings & note lifecycle hooks | **IMPLEMENTED** (Milestones 6B, 6D.4: `sentence-transformers/all-MiniLM-L6-v2`, inline `embedding`, `embedding_model`, backfill script verified on live Atlas with dry-run, idempotency, and concurrency protection) |
 | **Vector Search API** | Vector search endpoint using `$vectorSearch` | **IMPLEMENTED** (Milestones 6C, 6D.2, 6D.3: verified end-to-end against live MongoDB Atlas cluster; live semantic retrieval confirmed) |
 | **Vector Search Index Provisioning** | Atlas Vector Search index `idx_notes_vector` (384-dim, cosine) on `notes` | **IMPLEMENTED** (Milestone 6D.2: provisioned on `fieldnote_db.notes`, status `READY`, queryable `True`) |
+| **User Interface (Web)** | Minimal responsive researcher dashboard & analytics UI | **IMPLEMENTED (Phase 2A Foundation)**: Jinja2 templates, static assets (`/static/*`), accessible mobile navigation drawer, SVG favicon, and dual-mode 404 handler (`/`, `/analytics`, `/404`) |
 
 ---
 
@@ -355,3 +356,52 @@ Milestone 6D.2 provisioned and verified the official Atlas Vector Search index o
   - Queryable: `True`
   - Notes Document Count: `0`
   - *Note*: Live semantic query retrieval and live embedding backfill verified end-to-end on MongoDB Atlas in Milestones 6D.3 and 6D.4; baseline collection state verified restored to 0 documents.
+
+---
+
+## 9. User Interface Layer Architecture (Milestone 7 — Phase 2A Foundation)
+
+Fieldnote includes a server-rendered, responsive web interface built directly on top of FastAPI and Jinja2 without external JavaScript frameworks:
+
+```
+               +-------------------------------------------------+
+               |              Client Browser Request             |
+               +-------------------------------------------------+
+                                       │
+                      ┌────────────────┴────────────────┐
+                      ▼                                 ▼
+             Browser Route (HTML)              API Route (/api/*)
+                      │                                 │
+                      ▼                                 ▼
+         +──────────────────────────+      +──────────────────────────+
+         |      app.routes.ui       |      |    app.routes.{notes,    |
+         |  - GET / (Dashboard)     |      |    attachments,search,   |
+         |  - GET /analytics        |      |    analytics}            |
+         |  - GET /favicon.ico      |      |  - JSON Responses        |
+         +──────────────────────────+      +──────────────────────────+
+                      │
+                      ▼
+         +──────────────────────────+
+         |     Jinja2 Templates     |
+         |  - base.html (Layout)    |
+         |  - index.html (Shell)    |
+         |  - analytics.html (Shell)|
+         |  - 404.html (Custom Err) |
+         +──────────────────────────+
+                      │
+                      ▼
+         +──────────────────────────+
+         |   Static Assets (/static)|
+         |  - css/style.css         |
+         |  - js/app.js             |
+         |  - favicon.svg           |
+         +──────────────────────────+
+```
+
+### 9.1 Architectural Principles
+- **Zero Framework Bloat**: Uses Vanilla CSS with CSS custom properties (variables) and lightweight Vanilla JS for accessibility and mobile navigation.
+- **Mobile-First & Overflow-Safe**: Root elements enforce `overflow-x: hidden` and `box-sizing: border-box`. All containers use fluid sizing and flexible grid definitions.
+- **Dual-Mode 404 Exception Handler**:
+  - Unmapped browser navigation (`Accept: text/html` without `/api/` prefix) renders `404.html` with a working return link.
+  - API endpoints and JSON requests (`/api/*` or `Accept: application/json`) preserve standard JSON error structures (`{"detail": "..."}`) without disruption.
+- **Accessible Navigation**: The mobile menu toggle implements explicit ARIA attributes (`aria-expanded`, `aria-controls`), focus management, backdrop dismissal, and `Escape`-key closure.

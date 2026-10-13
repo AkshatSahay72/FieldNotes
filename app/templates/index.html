@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Fieldnote — Research Dashboard{% endblock %}
+{% block description %}Explore and manage scientific field observations, research notes, and evidence metadata powered by MongoDB Atlas Vector Search.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <span class="badge badge-info">Milestone 7 &mdash; Phase 2A Foundation</span>
+    <h1 class="card-title">Research Observations Dashboard</h1>
+    <p>A lightweight research notes and evidence management system for field scientists.</p>
+  </div>
+
+  <div class="card-body">
+    <p>
+      The UI Foundation for Fieldnote is initialized with accessible layouts, responsive navigation, 
+      and static asset delivery. Interactive note authoring, text search, tag filtering, and Atlas vector search 
+      are scheduled for phased implementation.
+    </p>
+
+    <div class="status-panel">
+      <h4>Milestone 7 Implementation Roadmap</h4>
+      <ul class="status-list">
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><strong>Phase 2A (Current):</strong> UI foundation, responsive base layout, accessible mobile navigation drawer, and custom 404 handler.</span>
+        </li>
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><strong>Phase 2B (Upcoming):</strong> Interactive Research Notes explorer, note creation form, tag filters, and semantic search toggle.</span>
+        </li>
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><strong>Phase 2C (Upcoming):</strong> Evidence gallery for GridFS image attachments and aggregation pipeline analytics charts.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="btn-group">
+      <a href="/analytics" class="btn btn-primary">View Analytics Shell</a>
+      <a href="/docs" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Explore FastAPI Swagger Docs</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

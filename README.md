@@ -40,13 +40,22 @@ The project is built incrementally in strict, reviewable milestones:
 - **Milestone 3**: Image Attachments & Evidence Metadata with GridFS *(Completed)*
 - **Milestone 4**: Indexing, Tag Filtering, & Native Text Search *(Completed)*
 - **Milestone 5**: Analytics & MongoDB Aggregation Pipelines *(Completed)*
-- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Next Milestone)*
-- **Milestone 7**: Minimal Frontend & Deployment Preparation *(Future)*
+- **Milestone 6**: Semantic Note Retrieval (Atlas Vector Search) *(Completed & Fully Verified)*
+- **Milestone 7**: Minimal Frontend & Deployment Preparation *(In Progress — Phase 2A Foundation)*
 
 Documentation files in `docs/` serve as the source of truth:
 - [PROJECT_SPEC.md](docs/PROJECT_SPEC.md): Scope, non-goals, and milestone acceptance criteria.
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md): Architectural decisions, schemas, and design constraints.
 - [IMPLEMENTATION_LOG.md](docs/IMPLEMENTATION_LOG.md): Current progress, decisions, verification records, and next milestone.
+
+---
+
+## Web Interface
+
+Fieldnote serves a mobile-ready, accessible researcher interface:
+- **Research Observations Dashboard**: `http://127.0.0.1:8000/`
+- **Analytics & Pipeline Insights**: `http://127.0.0.1:8000/analytics`
+- **Interactive Swagger API Documentation**: `http://127.0.0.1:8000/docs`
 
 ---
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <!-- Notebook Cover Background -->
+  <rect x="5" y="3" width="22" height="26" rx="3" fill="#0f172a" />
+  <!-- Notebook Spine -->
+  <rect x="5" y="3" width="4" height="26" rx="1" fill="#0284c7" />
+  <!-- Research Lines -->
+  <line x1="12" y1="9" x2="23" y2="9" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+  <line x1="12" y1="14" x2="23" y2="14" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+  <line x1="12" y1="19" x2="19" y2="19" stroke="#94a3b8" stroke-width="1.75" stroke-linecap="round" />
+  <!-- Scientific Node / Discovery Dot -->
+  <circle cx="21" cy="23" r="2.25" fill="#10b981" />
+</svg>

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Fieldnote — Analytics &amp; Pipeline Insights{% endblock %}
+{% block description %}Real-time MongoDB aggregation pipeline insights for research note tags, creation timelines, and evidence distribution.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="card-header">
+    <span class="badge badge-accent">MongoDB Aggregation Pipelines</span>
+    <h1 class="card-title">Research Analytics &amp; Pipeline Insights</h1>
+    <p>Analytical summaries computed directly using multi-stage MongoDB aggregation pipelines.</p>
+  </div>
+
+  <div class="card-body">
+    <p>
+      This view surfaces analytical metrics across research notes and GridFS image attachments.
+      Interactive pipeline visualizations (tag distributions via <code>$unwind</code> &amp; <code>$group</code>, 
+      chronological activity trends via <code>$dateToString</code>, and attachment counts via <code>$lookup</code>) 
+      will be rendered in Phase 2C.
+    </p>
+
+    <div class="status-panel">
+      <h4>Available Backend Aggregation Endpoints</h4>
+      <ul class="status-list">
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><code>GET /api/analytics/overview</code> &mdash; Total notes, attachments, and tagged notes summary.</span>
+        </li>
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><code>GET /api/analytics/tags</code> &mdash; Categorical tag frequency counts and ranking.</span>
+        </li>
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><code>GET /api/analytics/activity</code> &mdash; Daily note creation frequency timeline.</span>
+        </li>
+        <li>
+          <span class="status-bullet">&bull;</span>
+          <span><code>GET /api/analytics/attachments</code> &mdash; Per-note evidence attachment counts.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="btn-group">
+      <a href="/" class="btn btn-primary">Return to Dashboard</a>
+      <a href="/api/analytics/overview" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Inspect Raw Overview JSON</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
