@@ -25,7 +25,8 @@ venv.bak/
 .coverage.*
 htmlcov/
 *.cover
-
+test/
+scripts/
 # IDE & Editor files
 .vscode/
 .idea/
