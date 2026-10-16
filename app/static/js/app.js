@@ -976,6 +976,12 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving...";
 
+      var saveTimer = setTimeout(function () {
+        if (saveBtn && saveBtn.disabled) {
+          saveBtn.textContent = "Embedding & Saving...";
+        }
+      }, 1500);
+
       var headers = { "Content-Type": "application/json" };
       var csrfToken = getCsrfToken();
       if (csrfToken) headers["x-csrf-token"] = csrfToken;
@@ -994,12 +1000,19 @@
               }
               throw new Error(msg);
             }).catch(function (parseErr) {
+              if (res.status === 401) {
+                throw new Error("Your session has expired. Please log in again to save memories.");
+              }
+              if (res.status === 503) {
+                throw new Error("Database or embedding service busy. Please try saving again in a moment.");
+              }
               throw new Error("Failed to save note (HTTP " + res.status + ")");
             });
           }
           return res.json();
         })
         .then(function (saved) {
+          clearTimeout(saveTimer);
           saveBtn.disabled = false;
           saveBtn.textContent = "Save Note";
           closeDialog(noteModal, noteModalBackdrop);
@@ -1007,6 +1020,7 @@
           loadNotes();
         })
         .catch(function (err) {
+          clearTimeout(saveTimer);
           saveBtn.disabled = false;
           saveBtn.textContent = "Save Note";
           modalErrorAlert.textContent = err.message || "An unexpected error occurred.";

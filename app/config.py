@@ -49,7 +49,7 @@ class Settings(BaseSettings):
         description="Target database name",
     )
     mongodb_server_selection_timeout_ms: int = Field(
-        default=2000,
+        default=5000,
         alias="MONGODB_SERVER_SELECTION_TIMEOUT_MS",
         description="Timeout in milliseconds for server selection and health pings",
     )

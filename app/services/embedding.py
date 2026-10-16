@@ -49,7 +49,11 @@ class EmbeddingService:
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
-                self._model = SentenceTransformer(self.model_name)
+                try:
+                    # Prefer local cache to prevent slow unauthenticated HF Hub network checks (cuts load from ~60s to ~2s)
+                    self._model = SentenceTransformer(self.model_name, local_files_only=True)
+                except (TypeError, Exception):
+                    self._model = SentenceTransformer(self.model_name)
                 logger.info("SentenceTransformer model '%s' loaded successfully.", self.model_name)
             except Exception as err:
                 logger.error("Failed to load embedding model '%s': %s", self.model_name, type(err).__name__)

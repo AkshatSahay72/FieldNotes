@@ -43,6 +43,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # Initialize justified indexes in non-testing environments
         if settings.app_env != "testing":
             init_db_indexes(app.state.db)
+            import asyncio
+            from app.services.embedding import get_embedding_service
+
+            async def _warmup_embeddings():
+                try:
+                    emb_svc = get_embedding_service(settings)
+                    await asyncio.to_thread(emb_svc._load_model)
+                    logger.info("Embedding service model pre-warmed successfully.")
+                except Exception as emb_err:
+                    logger.warning("Embedding service pre-warmup deferred: %s", type(emb_err).__name__)
+
+            asyncio.create_task(_warmup_embeddings())
     except Exception as err:
         logger.error("Failed to initialize MongoDB client: %s", type(err).__name__)
         app.state.db_client = None
